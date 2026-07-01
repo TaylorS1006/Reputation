@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email IQ — Medallion</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #1a1a2e; }
+  header { background: #1a1a2e; color: white; padding: 24px 40px; }
+  header h1 { font-size: 24px; font-weight: 700; }
+  header p { font-size: 13px; opacity: 0.6; margin-top: 4px; }
+  main { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+  h2 { font-size: 20px; margin-bottom: 16px; text-transform: capitalize; }
+  h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #444; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Benchmark legend */
+  .legend { display: flex; gap: 20px; margin-bottom: 24px; font-size: 13px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.good { background: #22c55e; }
+  .dot.ok { background: #f59e0b; }
+  .dot.bad { background: #ef4444; }
+
+  /* Summary table */
+  .summary-card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 40px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead { background: #f1f5f9; }
+  th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
+  td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; }
+  tr:last-child td { border-bottom: none; }
+  td a { color: #1a1a2e; text-decoration: none; font-weight: 500; text-transform: capitalize; }
+  td a:hover { text-decoration: underline; }
+  .benchmark-row td { font-size: 12px; color: #94a3b8; font-style: italic; background: #fafafa; }
+
+  /* Color coding */
+  td.good { color: #16a34a; font-weight: 600; }
+  td.ok { color: #d97706; font-weight: 600; }
+  td.bad { color: #dc2626; font-weight: 600; }
+  .trend-up { color: #16a34a; font-size: 12px; margin-left: 4px; }
+  .trend-down { color: #dc2626; font-size: 12px; margin-left: 4px; }
+
+  /* Playbook sections */
+  .playbook-section { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 28px; margin-bottom: 24px; scroll-margin-top: 20px; }
+  .playbook-section h2 { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; font-size: 18px; text-transform: capitalize; }
+  .sample-count { font-size: 13px; font-weight: 400; color: #94a3b8; }
+  .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .insight-card { background: #f8f9fa; border-radius: 8px; padding: 16px; }
+  .insight-card h3 { margin-bottom: 8px; }
+  .insight-card p { font-size: 14px; line-height: 1.6; color: #374151; }
+  .top-emails th, .top-emails td { padding: 10px 12px; }
+  .top-emails thead { background: #f8f9fa; }
+  .insufficient { opacity: 0.7; }
+  .insufficient-note { color: #d97706; font-size: 14px; }
+
+  @media (max-width: 700px) {
+    .insights-grid { grid-template-columns: 1fr; }
+    header { padding: 20px; }
+    main { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Email IQ</h1>
+  <p>Medallion email performance dashboard · Generated July 01, 2026 at 11:45 PM UTC</p>
+</header>
+<main>
+  <div class="legend">
+    <span><span class="dot good"></span> Above benchmark</span>
+    <span><span class="dot ok"></span> Within 15% of benchmark</span>
+    <span><span class="dot bad"></span> Below benchmark</span>
+  </div>
+
+  <div class="summary-card">
+    <table>
+      <thead>
+        <tr>
+          <th>Content Type</th>
+          <th>Emails</th>
+          <th>Total Sent</th>
+          <th>Open Rate</th>
+          <th>Click Rate</th>
+          <th>CTOR</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr>
+            <td><a href="#webinar">webinar</a></td>
+            <td>65</td>
+            <td>182,577</td>
+            <td class="bad">22.3% <span class="trend-up">↑ 5.3%</span></td>
+            <td class="bad">1.0% <span class="trend-up">↑ 0.5%</span></td>
+            <td class="bad">4.6%</td>
+        </tr>
+        <tr>
+            <td><a href="#content">content</a></td>
+            <td>31</td>
+            <td>35,553</td>
+            <td class="bad">20.0% <span class="trend-up">↑ 12.6%</span></td>
+            <td class="bad">1.1% <span class="trend-up">↑ 0.7%</span></td>
+            <td class="bad">5.5%</td>
+        </tr>
+        <tr>
+            <td><a href="#micro-event">micro event</a></td>
+            <td>31</td>
+            <td>16,321</td>
+            <td class="bad">8.7% <span class="trend-down">↓ 5.0%</span></td>
+            <td class="bad">0.9% <span class="trend-up">↑ 0.4%</span></td>
+            <td class="ok">10.6%</td>
+        </tr>
+        <tr>
+            <td><a href="#announcement">announcement</a></td>
+            <td>30</td>
+            <td>8,344</td>
+            <td class="ok">32.3% <span class="trend-down">↓ 8.1%</span></td>
+            <td class="bad">2.0% <span class=""></span></td>
+            <td class="bad">6.2%</td>
+        </tr>
+        <tr>
+            <td><a href="#newsletter">newsletter</a></td>
+            <td>12</td>
+            <td>6,819</td>
+            <td class="ok">31.6% <span class="trend-down">↓ 3.2%</span></td>
+            <td class="bad">1.2% <span class="trend-down">↓ 0.4%</span></td>
+            <td class="bad">3.7%</td>
+        </tr>
+        <tr>
+            <td><a href="#onboarding">onboarding</a></td>
+            <td>11</td>
+            <td>132</td>
+            <td class="bad">25.0% <span class=""></span></td>
+            <td class="ok">3.0% <span class=""></span></td>
+            <td class="good">12.1%</td>
+        </tr>
+        <tr>
+            <td><a href="#survey">survey</a></td>
+            <td>8</td>
+            <td>27,200</td>
+            <td class="bad">13.4% <span class=""></span></td>
+            <td class="bad">1.5% <span class=""></span></td>
+            <td class="ok">10.9%</td>
+        </tr>
+        <tr>
+            <td><a href="#product-release">product release</a></td>
+            <td>6</td>
+            <td>615</td>
+            <td class="good">48.0% <span class="trend-up">↑ 2.4%</span></td>
+            <td class="bad">1.8% <span class=""></span></td>
+            <td class="bad">3.7%</td>
+        </tr>
+        <tr>
+            <td><a href="#virtual-event">virtual event</a></td>
+            <td>2</td>
+            <td>2,008</td>
+            <td class="bad">19.5% <span class="trend-up">↑ 6.9%</span></td>
+            <td class="bad">2.1% <span class="trend-up">↑ 1.5%</span></td>
+            <td class="ok">10.8%</td>
+        </tr>
+        <tr class="benchmark-row">
+          <td colspan="3">B2B SaaS benchmark</td>
+          <td>35%</td><td>3%</td><td>10%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Playbook by Content Type</h2>
+  
+        <section id="announcement" class="playbook-section">
+            <h2>announcement <span class="sample-count">30 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Personalized or relationship-oriented subjects ('Thank You + Quick Feedback Request', 'Welcome + Member Kit') show the highest open rates (76.5% and 58.6%), but these were sent to very small lists (17 and 29 recipients), making generalization unreliable. Among larger sends (200+ recipients), urgency-framing ('Action required', 'Coming soon', 'Upcoming changes') and 'Now live' announcements tend to outperform generic feature announcements, landing in the 43-49% open rate range vs. 28-33% for broader announcement formats. Fundraising subjects ('$43M raised') consistently underperform across all list sizes. No clear pattern emerges favoring shorter vs. longer subject lines based on this data alone.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>Click rate data is sparse and highly variable, making it difficult to draw firm conclusions. The top click rates appear in emails with explicit action requirements ('Action required: Michigan is exiting the IMLC' at 2.1%, 'Upcoming changes: New required fields' at 6.7%) and community/relationship emails ('Thank You + Quick Feedback Request' at 58.8%, 'Welcome + Member Kit' at 37.9%), though the latter two had tiny send lists. Many high-open-rate emails had 0.0% click rates (e.g., several 'New Analytic reports' and 'Now live' emails), suggesting announcement emails often drive opens without clicks. Insufficient data to characterize specific CTA language or button copy.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>Emails are spread across multiple months from August 2025 to June 2026 with no send-time data available, only dates. No day-of-week or time-of-day analysis is possible. Monthly volume is too inconsistent to identify a seasonal trend. The data does not support any timing-based pattern.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>30 emails analyzed, but list sizes vary dramatically from 1 to 1,077 recipients. The top 3 open-rate emails were sent to lists of 17, 96, and 29 — very small samples that are statistically unreliable and likely represent highly targeted or relationship-based sends rather than broad campaigns. Patterns among larger sends (200+ recipients) are more generalizable but still represent a small sample. Several emails appear to be near-duplicates sent to different segments on the same or nearby dates, which adds noise. No click-through destination or CTA copy data is available.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>Action required: Michigan is exiting the IMLC, here's what to do</td>
+                    <td>96</td>
+                    <td class="good">61.5%</td>
+                    <td class="bad">2.1%</td>
+                </tr>
+                <tr>
+                    <td>Submit multi-state enrollments easier with new license flexibility</td>
+                    <td>245</td>
+                    <td class="good">48.6%</td>
+                    <td class="bad">0.8%</td>
+                </tr>
+                <tr>
+                    <td>Coming soon: Standard payer names will be required for all enrollment records</td>
+                    <td>244</td>
+                    <td class="good">48.1%</td>
+                    <td class="bad">1.2%</td>
+                </tr>
+                <tr>
+                    <td>New Analytic reports are now available for Consumption and Provider Onboarding</td>
+                    <td>146</td>
+                    <td class="good">46.6%</td>
+                    <td class="bad">0.0%</td>
+                </tr>
+                <tr>
+                    <td>Manage terminations & billing with more clarity</td>
+                    <td>94</td>
+                    <td class="good">45.7%</td>
+                    <td class="bad">2.1%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="content" class="playbook-section">
+            <h2>content <span class="sample-count">31 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Bracketed format tags like [You're invited], [Final chance for coffee], and [Report] correlate strongly with higher open rates — the top 4 emails all use bracketed prefixes. Urgency or scarcity language ('Final chance') and personalized invitation framing ('You're invited') appear in the two highest-performing emails (47.3% and 44.2%). The coffee/casual-meeting theme with emoji (☕) also outperformed average (37.5%). By contrast, plain statement subjects like 'A latte teams are dealing with onboarding delays' (6.6%) and 'Why care access is breaking down' (16.5%) underperformed. Questions do not consistently outperform statements based on this dataset alone — there are too few pure question subjects to isolate the effect. Specificity with dollar figures or concrete metrics (e.g. '$1M+') appears in the top subject and may contribute, but there is only one example so this cannot be confirmed as a pattern.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The data does not include CTA text or email body content, so direct CTA analysis is not possible. However, content themes can be partially inferred from subject lines: emails framed around events or interactive invitations (coffee chats, webinars implied by 'You're invited') show higher click rates (2.0–2.4%) compared to purely topical or awareness-style subjects (0.1–0.9%). Report-themed emails ([Report] State of Payer Enrollment) show moderate-to-high click rates (1.1–2.8%), suggesting gated asset downloads may drive clicks. Very large send-list emails (3,000+) consistently show lower click rates (0.4–0.9%), which may reflect list quality rather than content theme.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>The data does not include send-time (hour) information, so intra-day timing patterns cannot be assessed. Looking at day-of-week: top performers were sent on Thursday (2026-04-30, 47.3%), Thursday (2026-05-21, 44.2%), and Wednesday (2026-05-07, 37.5%), suggesting mid-to-late week may correlate with higher opens, but the sample is too small and confounded by other variables (subject line format, list size) to draw a reliable conclusion. No clear monthly seasonality pattern is visible given the mix of high and low performers across months.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>This analysis covers 31 emails, several of which are duplicate sends of the same subject line to different segments (e.g., '[Report] The 2026 State of Payer Enrollment' appears 3 times; 'Test your operational readiness' appears 3 times). List sizes vary dramatically from 65 to 3,852, which significantly affects the reliability of open and click rate comparisons — smaller lists (under 150) are statistically unreliable. Patterns should be treated as directional hypotheses, not statistically validated findings.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>[You’re invited] How provider readiness impacts time to revenue (and costs some teams $1M+)</td>
+                    <td>1,124</td>
+                    <td class="good">47.3%</td>
+                    <td class="bad">2.2%</td>
+                </tr>
+                <tr>
+                    <td>[Final chance for coffee]: Reduce onboarding delays and improve time to revenue</td>
+                    <td>998</td>
+                    <td class="good">44.2%</td>
+                    <td class="bad">2.0%</td>
+                </tr>
+                <tr>
+                    <td>☕ Coffee Break? Is provider readiness slowing your time to revenue?</td>
+                    <td>1,201</td>
+                    <td class="ok">37.5%</td>
+                    <td class="bad">2.4%</td>
+                </tr>
+                <tr>
+                    <td>[Report] The 2026 State of Payer Enrollment and Medical Credentialing</td>
+                    <td>1,793</td>
+                    <td class="ok">34.1%</td>
+                    <td class="bad">2.5%</td>
+                </tr>
+                <tr>
+                    <td>  Test your operational readiness with this worksheet</td>
+                    <td>83</td>
+                    <td class="ok">33.7%</td>
+                    <td class="bad">0.0%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="micro-event" class="playbook-section">
+            <h2>micro event <span class="sample-count">31 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Three patterns appear in the top performers, though sample size limits confidence. First, highly specific, exclusive-sounding invitations tied to a named conference or event context perform well — the top email ('Invitation: Executive Dinner at Flour + Water During JPM') achieved 44.3% open rate, likely aided by its small send list (79) and JPM conference context. Second, casual, short subject lines with a question mark ('Dinner @ Stillwell's ?', 10.6–12.0%) outperform longer, formal alternatives of similar send size, suggesting conversational framing helps. Third, urgency/scarcity phrases like 'Final Seats Remaining' and 'Few Spots Left' appear in mid-tier performers (10.7–12.8%) but 'Last Chance' and 'Last Call' variants cluster near the bottom (3.7–6.6%), suggesting early-funnel scarcity works better than late-stage urgency. Generic 'Don't Miss' subject lines consistently underperform (3.0–6.2%). Note: open rates are heavily confounded by send volume — the top two performers had sends of 79 and 70 respectively, making direct comparison to 1,000+ send emails unreliable.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The email body content and CTAs are not included in this dataset, so it is not possible to determine which specific CTAs drove engagement. Click rates are uniformly low across all emails (0.0–5.7%), with no clear correlation between click rate and open rate. The Vegas Sphere Experience email (70 sent, 5.7% click rate) had the highest click rate, but the tiny send volume makes this unreliable as a generalizable finding. Insufficient data to draw CTA conclusions.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>The data does not support clear day-of-week or time-of-day patterns because send timestamps include only dates, not times, and the dataset is too small and varied in send volume to isolate timing effects. Emails sent in January 2026 (JPM context) show high open rates, but this is more plausibly explained by conference relevance and small list size than by the month itself. No reliable timing pattern can be extracted from this data.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>31 emails total, with send volumes ranging from 23 to 1,466 recipients. Open rates are not normalized for list size, which heavily skews comparisons — several top performers had fewer than 100 sends. No A/B test structure is evident, making it difficult to isolate individual variables. Patterns should be treated as directional hypotheses, not statistically validated findings.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>Invitation: Executive Dinner at Flour + Water During JPM</td>
+                    <td>79</td>
+                    <td class="good">44.3%</td>
+                    <td class="bad">1.3%</td>
+                </tr>
+                <tr>
+                    <td>In Vegas? Join us for Medallion’s Emerald Evening: A Wizard of Oz Sphere Experience</td>
+                    <td>70</td>
+                    <td class="bad">24.3%</td>
+                    <td class="good">5.7%</td>
+                </tr>
+                <tr>
+                    <td>Invitation: Executive Dinner at Flour + Water During JPM</td>
+                    <td>304</td>
+                    <td class="bad">22.1%</td>
+                    <td class="good">3.4%</td>
+                </tr>
+                <tr>
+                    <td>Final Seats Remaining for Our Exclusive Healthcare Leaders Dinner in Boston</td>
+                    <td>1,463</td>
+                    <td class="bad">12.8%</td>
+                    <td class="ok">3.2%</td>
+                </tr>
+                <tr>
+                    <td>A Seat at the Table: Join Medallion for an Exclusive Dinner at Aquavit in New York</td>
+                    <td>1,336</td>
+                    <td class="bad">12.2%</td>
+                    <td class="bad">0.4%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="newsletter" class="playbook-section">
+            <h2>newsletter <span class="sample-count">12 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>The 'Your [Month] Roundup ✨' format consistently outperforms the 'Medallion Product Update - [Month Year]' format. Among statistically meaningful sends (100+ recipients), Roundup emails average ~38% open rates versus ~30% for Product Update emails. The personalized 'Your' prefix and emoji may contribute to higher opens, but the two formats also differ in audience size, making it difficult to fully isolate subject line effect from list composition. Shorter, more personal subject lines (e.g. 'Your June Roundup ✨' at 22 chars) correlate with higher open rates than longer branded ones (e.g. 'Medallion Product Update - February 2026' at 40 chars). However, larger list sizes also correlate with lower open rates, so list size is a confounding variable.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The data does not include CTA or content theme details — only subject lines, send volumes, open rates, and click rates. Click rates are uniformly low across all emails (0.3%–4.3%), with the highest click rate (4.3%) coming from the smallest meaningful send (23 recipients), making it unreliable. No CTA patterns can be responsibly inferred from this data.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>All emails in this dataset were sent on weekdays, mostly in the first or second week of the month, consistent with a monthly newsletter cadence. There is insufficient variation in send timing to identify day-of-week or time-of-day effects. No clear timing pattern beyond 'early in the month' is supported by this data.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>12 emails total. One email was sent to only 1 recipient (0% open rate) and should be excluded from analysis. The top-performing email ('Your June Roundup ✨') had only 23 recipients, making its 52.2% open rate statistically unreliable. The 'Roundup' series was sent to 202–316 recipients per send, while 'Product Update' emails were sent to 1,260–1,385 recipients — this difference in list size is a significant confounding variable when comparing the two formats.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>Your December Roundup ✨</td>
+                    <td>235</td>
+                    <td class="good">41.9%</td>
+                    <td class="bad">1.3%</td>
+                </tr>
+                <tr>
+                    <td>Your November Roundup ✨</td>
+                    <td>202</td>
+                    <td class="good">41.8%</td>
+                    <td class="bad">2.5%</td>
+                </tr>
+                <tr>
+                    <td>Your July Roundup ✨</td>
+                    <td>236</td>
+                    <td class="good">40.2%</td>
+                    <td class="bad">2.1%</td>
+                </tr>
+                <tr>
+                    <td>Your August Roundup ✨</td>
+                    <td>316</td>
+                    <td class="ok">34.0%</td>
+                    <td class="bad">0.9%</td>
+                </tr>
+                <tr>
+                    <td>Your October Roundup ✨</td>
+                    <td>305</td>
+                    <td class="ok">32.9%</td>
+                    <td class="bad">0.3%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="onboarding" class="playbook-section">
+            <h2>onboarding <span class="sample-count">11 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Top-performing subjects (open rates 36-38%) use intriguing, problem-focused statements with implicit pain points ('silent slowdown', 'smarter onboarding'). They avoid explicit numbers or specific claims. The highest openers are moderately long descriptive phrases rather than short punchy lines. Questions do not clearly outperform statements here — the top two are statements. Subjects that lead with specific metrics or cost savings ('up to 64%', '1 day instead of 1 week') performed poorly. However, sample sizes per email are very small (3-36 recipients), making these patterns unreliable. The \ xa0 prefix appears on most emails including both top and bottom performers, so it is not a differentiator. No clear length-based pattern is strongly supported given the noise.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The data does not include CTA text or body content, only subject lines and metrics. Click rates are mostly 0% with two exceptions: '\ xa0The credentialing bottleneck no one talks about' had an 18.2% click rate (but only 11 recipients, so ~2 clicks), and '\ xa0What smarter onboarding looks like' had a 3.5% click rate. No reliable CTA content pattern can be determined from this data alone.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>Nearly all emails were sent on 2025-12-09, with only two sent on 2025-12-10. The two 2025-12-10 emails had middling open rates (27.3% and 12.5%). No meaningful day-of-week or time pattern can be established from a single-day dataset with such a small send window.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>This dataset covers only 11 emails with recipient counts ranging from 3 to 36 per email. Most emails were sent to fewer than 15 recipients, making open and click rates statistically unreliable — a single open or click dramatically shifts percentages. Several emails sent to 3-4 recipients had 0% open rates, which may reflect list quality or timing rather than subject line weakness. No strong conclusions should be drawn without larger send volumes.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4">No emails with 50+ recipients</td></tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="product-release" class="playbook-section">
+            <h2>product release <span class="sample-count">6 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Shorter, specific subject lines appear to correlate with higher open rates. The top two performers ('New profile completion logic is now live' at 55.1% and 'Provider ID field launching soon' at 54.6%) are both under 55 characters and reference a specific feature by name. The lowest performer (33.8%) uses an identical subject line to a higher-performing send (51.1%), suggesting list or timing differences may override subject line copy. 'Now live' or direct launch language slightly outperforms 'coming soon' teaser framing, though the sample is too small to confirm this firmly. Emoji usage does not show a clear positive or negative effect based on this data alone.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>Click-through rate data is insufficient to identify reliable CTA patterns. Only two emails recorded any clicks at all: 'New profile completion logic is now live' (10.3%) and 'Provider ID field launching soon' (3.5%). All other emails had 0.0% click rates. This suggests either those two emails contained a more compelling or functional CTA, or the others lacked one entirely, but without body content data no actionable CTA pattern can be confirmed.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>No clear send-day or send-time pattern is visible. Emails were sent across July, August, and September 2025, but dates alone (without day-of-week or time-of-day data) are insufficient to draw timing conclusions. The duplicate subject line sent on 2025-09-10 outperformed the same subject sent on 2025-09-17 (51.1% vs 33.8%), which may hint at week-of-month or list fatigue effects, but this is speculative with only 6 data points.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>Analysis is based on only 6 emails, with send volumes ranging from 74 to 180 recipients. This sample is too small to establish statistically reliable patterns. One subject line appears twice with different open rates, which introduces a confound. All findings should be treated as directional hypotheses requiring further testing.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>New profile completion logic is now live</td>
+                    <td>78</td>
+                    <td class="good">55.1%</td>
+                    <td class="good">10.3%</td>
+                </tr>
+                <tr>
+                    <td> Provider ID field launching soon 🔜</td>
+                    <td>87</td>
+                    <td class="good">54.6%</td>
+                    <td class="good">3.5%</td>
+                </tr>
+                <tr>
+                    <td>New Analytic reports are now available for Provider Summary and Credentialing</td>
+                    <td>94</td>
+                    <td class="good">51.1%</td>
+                    <td class="bad">0.0%</td>
+                </tr>
+                <tr>
+                    <td>A better analytics experience is coming your way</td>
+                    <td>180</td>
+                    <td class="good">48.3%</td>
+                    <td class="bad">0.0%</td>
+                </tr>
+                <tr>
+                    <td>A new approach to profile completion will go live soon ✅</td>
+                    <td>102</td>
+                    <td class="good">44.1%</td>
+                    <td class="bad">0.0%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="survey" class="playbook-section">
+            <h2>survey <span class="sample-count">8 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>The data supports a few tentative patterns, but the small sample (8 emails, 2 with zero sends) limits confidence. Questions or personalized subject lines ('{{ contact.firstname }} $20 for your insights!', 'Share your experience with Medallion?') appear in the top-performing group. The lowest-performing email with meaningful volume ('Your chance to provide feedback + get $20', 5.0% open rate) uses a statement format despite including an incentive, suggesting phrasing and framing may matter more than incentive mention alone. However, with only 6 emails with non-zero sends, no single pattern is conclusively demonstrated.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The data does not include CTA copy, so CTA patterns cannot be directly assessed. The top open-rate email ('{{ contact.firstname }} $20 for your insights!') also had the highest click rate (3.0%), suggesting that subject lines promising a clear incentive and personalizing by name may drive both opens and clicks. The second-highest click rate (2.1%) appears in two emails with very different send volumes (6,006 and 95), making it difficult to draw reliable conclusions. Overall, insufficient data to determine CTA patterns.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>Emails were sent across July, September, October 2025, and June 2026, with no clear day-of-week or time-of-day data available. The top-performing emails by open rate span September 23, September 29, and October 7 2025, but this may reflect audience or content differences rather than timing. The data is insufficient to support a timing pattern.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>Only 8 emails total, 2 of which had 0 sends and 0% open/click rates (likely unsent or errored sends with encoding issues in subject lines). Effective sample is 6 emails. Send volumes vary widely (95 to 10,608), which affects the reliability of rate comparisons. Patterns should be treated as hypotheses only, not statistically validated conclusions.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>{{ contact.firstname }} $20 for your insights!</td>
+                    <td>5,447</td>
+                    <td class="bad">19.7%</td>
+                    <td class="ok">3.0%</td>
+                </tr>
+                <tr>
+                    <td>Last call to take Medallion’s annual benchmarking survey</td>
+                    <td>4,888</td>
+                    <td class="bad">19.1%</td>
+                    <td class="bad">1.1%</td>
+                </tr>
+                <tr>
+                    <td>Share your experience with Medallion?</td>
+                    <td>156</td>
+                    <td class="bad">18.2%</td>
+                    <td class="bad">1.9%</td>
+                </tr>
+                <tr>
+                    <td>Your insights are needed!</td>
+                    <td>6,006</td>
+                    <td class="bad">17.6%</td>
+                    <td class="bad">2.1%</td>
+                </tr>
+                <tr>
+                    <td>Share your thoughts on roster generation for delegated payer enrollments</td>
+                    <td>95</td>
+                    <td class="bad">16.0%</td>
+                    <td class="bad">2.1%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+        <section id="virtual-event" class="playbook-section insufficient">
+            <h2>virtual event</h2>
+            <p class="insufficient-note">⚠ Insufficient data (2 emails, need 5+ with 50+ recipients for reliable analysis)</p>
+        </section>
+        <section id="webinar" class="playbook-section">
+            <h2>webinar <span class="sample-count">65 emails</span></h2>
+            <div class="insights-grid">
+                <div class="insight-card">
+                    <h3>Subject Line Patterns</h3>
+                    <p>Several patterns correlate with higher open rates, though many top performers have very small send volumes (under 100) that limit statistical confidence. (1) Urgency/scarcity language performs well at scale: 'Last chance' subject lines (e.g., 'Last chance: Secure your spot for Demo Day' at 48.8% on 1,021 sends) outperform average. (2) Personalized or exclusive-feeling subjects like 'You're So Close' and 'You're in one of the slowest/fastest enrollment timeline states' achieve 32-54% open rates on moderate-to-large lists. (3) On-demand/watch-now framing ('Demo Day available on demand', 'Watch Medallion Demo Day on demand') performs strongly but mostly on tiny lists. (4) Gift/incentive subjects ('Claim your coffee kit', 'Claim Your Elevate Gift Box Today') achieve 41-54% open rates across varied list sizes. (5) Bracket-prefixed subjects like '[You're invited]', '[Last Chance!]', '[Watch on demand]' perform in the 26-40% range on large lists. (6) The failed personalization token subject ('{{ personalization_token... }}') sent to 10,864 recipients achieved only 22.8%, suggesting broken personalization hurts performance. (7) The lowest performers (under 15% open rate) tend to use vague or gimmicky hooks like 'This demo ends with a drink' or 'Crafting better care and cocktails', or generic 'You're invited: Exclusive look inside the platform'. No consistent length pattern is clearly supported given the noise.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>CTA Patterns</h3>
+                    <p>The data does not include explicit CTA text, only subject lines and metrics. However, content themes in high-performing subjects suggest: (1) On-demand viewing prompts ('available on demand', 'Watch on demand') correlate with both high open rates AND high click rates (20-26.7% click rates), making them the strongest click-through theme. (2) Incentive/gift claims ('Claim your coffee kit', 'Claim Your Elevate Gift Box') achieve solid click rates (2-32%) across list sizes. (3) Post-event follow-up emails ('Thank you for spending time with us', 'Thank you for being a part of Elevate 2025') show elevated open and click rates, suggesting re-engagement after attendance converts well. (4) Large-blast registration emails for Elevate 2025/2026 consistently yield low click rates (0.5-1.4%) despite moderate open rates, suggesting the CTA to register a virtual conference does not convert well at scale.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Timing Patterns</h3>
+                    <p>The data does not include send-time (hour) information, only dates. Day-of-week patterns cannot be reliably extracted because the dataset is too small (65 emails) and unevenly distributed across campaigns and audience segments to isolate timing as a variable. No clear month-over-month or seasonal pattern is evident that is not confounded by campaign type or list size.</p>
+                </div>
+                <div class="insight-card">
+                    <h3>Data Note</h3>
+                    <p>65 emails analyzed. Many top open-rate performers (e.g., 66.7%, 64.3%, 54.5%) were sent to fewer than 25 recipients, making those rates statistically unreliable. Patterns cited with higher confidence are drawn from sends of 250+ recipients. The dataset mixes several distinct campaign types (Elevate conference, Demo Day webinar, payer enrollment webinars, on-demand follow-ups), which confounds cross-campaign pattern analysis. One email had a broken personalization token that was still deployed at scale.</p>
+                </div>
+            </div>
+            <h3>Top Performing Emails</h3>
+            <table class="top-emails">
+                <thead>
+                    <tr>
+                        <th>Subject</th>
+                        <th>Sent</th>
+                        <th>Open Rate</th>
+                        <th>Click Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                <tr>
+                    <td>You’re So Close—Elevate is less than a month away!</td>
+                    <td>2,010</td>
+                    <td class="good">64.6%</td>
+                    <td class="bad">1.8%</td>
+                </tr>
+                <tr>
+                    <td>You’re so close—Claim your coffee kit</td>
+                    <td>735</td>
+                    <td class="good">54.6%</td>
+                    <td class="bad">2.2%</td>
+                </tr>
+                <tr>
+                    <td>You’re So Close—Claim Your Elevate Gift Box Today</td>
+                    <td>56</td>
+                    <td class="good">53.6%</td>
+                    <td class="good">32.1%</td>
+                </tr>
+                <tr>
+                    <td>Last chance: Secure your spot for Demo Day </td>
+                    <td>1,021</td>
+                    <td class="good">48.8%</td>
+                    <td class="good">4.3%</td>
+                </tr>
+                <tr>
+                    <td> Ready to reduce cost and remove provider abrasion?</td>
+                    <td>972</td>
+                    <td class="good">42.8%</td>
+                    <td class="bad">1.8%</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+</main>
+</body>
+</html>
