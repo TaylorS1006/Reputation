@@ -4,16 +4,36 @@ SendSmart Pipeline Association.
 For a given HubSpot email campaign, finds engaged contacts (opens + clicks),
 matches them to Salesforce, and rolls up associated pipeline and revenue.
 
+Contact-level opportunities are further sorted into signal tiers, aligned to
+Medallion's existing 60-day attribution window:
+  - "directly_followed"        — contact clicked, the opportunity was created
+                                  within 60 days after that click, AND a rep
+                                  Task/Event ties the contact or account to
+                                  that window (corroborated).
+  - "followed_uncorroborated"  — same click + 60-day match, but no rep
+                                  Task/Event found in that window.
+  - "no_signal"                — contact-level opp tied to an engaged contact,
+                                  but the contact never clicked (open-only) or
+                                  the opp falls outside the 60-day window.
+Account-level opportunities are untouched by this tiering — they remain
+"any open opp at a matched account," independent of click/window/rep signal.
+
+These are association signals, not causal attribution — no tier implies the
+email "caused" or should be credited with the deal.
+
 Uses:
-  - HubSpot Email Events API v1 for engaged contacts
-  - Salesforce simple_salesforce for Contact + Opportunity queries
+  - HubSpot Email Events API v1 for engaged contacts (opens + clicks) and,
+    where available, per-event click timestamps
+  - Salesforce simple_salesforce for Contact, Opportunity, Task, and Event
+    queries
 
 Internal @medallion.co addresses are excluded throughout.
 """
 
 import os
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -23,6 +43,22 @@ from simple_salesforce import Salesforce
 load_dotenv()
 
 INTERNAL_DOMAIN = "medallion.co"
+
+# Aligns with Medallion's existing 60-day attribution window.
+SIGNAL_WINDOW_DAYS = 60
+
+# Grace period after an opportunity's creation during which a rep Task/Event
+# still counts as corroborating (reps often log the touch just after creating
+# the record, not strictly before).
+CORROBORATION_GRACE_DAYS = 2
+
+# Honest, non-causal labels for contact-level signal tiers — never "caused"
+# or "attributed".
+TIER_LABELS = {
+    "directly_followed": "Directly followed",
+    "followed_uncorroborated": "Followed, uncorroborated",
+    "no_signal": "No qualifying signal",
+}
 
 
 # ─── Data classes ────────────────────────────────────────────────────────────
@@ -55,8 +91,15 @@ class Opportunity:
     account_id: str
     account_name: str
     contact_level: bool    # True = this specific contact is on the deal
+    contact_id: Optional[str] = None     # contact-level only — the OppContactRole contact
     contact_role: Optional[str] = None
-    created_post_send: bool = False
+    created_post_send: bool = False      # created any time after send date (no day limit)
+
+    # Contact-level signal tiering (None for account-level opportunities).
+    signal_tier: Optional[str] = None       # "directly_followed" | "followed_uncorroborated" | "no_signal"
+    corroborated: Optional[bool] = None     # only set when signal_tier is one of the two "followed" tiers
+    click_date_used: Optional[str] = None   # ISO date of the click signal, if the contact clicked at all
+    click_date_source: Optional[str] = None  # "hubspot_click_event" | "campaign_send_date_fallback"
 
 
 @dataclass
@@ -121,6 +164,10 @@ class PipelineResult:
                     "is_won": o.is_won,
                     "post_send": o.created_post_send,
                     "contact_level": o.contact_level,
+                    "signal_tier": o.signal_tier,
+                    "corroborated": o.corroborated,
+                    "click_date_used": o.click_date_used,
+                    "click_date_source": o.click_date_source,
                 }
                 for o in self.all_opps
             ],
@@ -143,6 +190,8 @@ class PipelineResult:
                     "stage": o.stage,
                     "amount": o.amount,
                     "post_send": o.created_post_send,
+                    "signal_tier": o.signal_tier,
+                    "corroborated": o.corroborated,
                 }
                 for o in top_opps
             ],
@@ -151,10 +200,35 @@ class PipelineResult:
 
 # ─── HubSpot ─────────────────────────────────────────────────────────────────
 
-def _get_engaged_emails(campaign_id: str, hs_token: str) -> tuple[set[str], str, str]:
+def _parse_event_dt(value) -> Optional[datetime]:
+    """Parse a HubSpot event 'created' timestamp (epoch ms) to a UTC datetime."""
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+@dataclass
+class EngagementDetail:
+    engaged_emails: set[str]         # opened OR clicked, excluding internal — unchanged semantics
+    clicked_emails: set[str]         # subset of engaged_emails that clicked at least once
+    click_dates: dict[str, datetime]  # email -> earliest CLICK event datetime (UTC), only where HubSpot gave a parseable timestamp
+    subject: str
+    send_date: str                   # YYYY-MM-DD
+
+
+def _get_engaged_emails(campaign_id: str, hs_token: str) -> EngagementDetail:
     """
-    Returns (external_emails, subject, send_date_iso).
-    Excludes internal @medallion.co addresses.
+    Fetches engagement for one campaign. `engaged_emails` (open ∪ click) keeps
+    its original purpose — matching to Salesforce and reporting total reach.
+    `clicked_emails` + `click_dates` isolate the click-only signal used for
+    the 60-day tiering: click_dates holds the earliest click timestamp per
+    contact where HubSpot's event payload included a parseable 'created'
+    field; contacts who clicked but lack a usable timestamp are still in
+    clicked_emails, and callers fall back to the campaign send date for them.
+    Excludes internal @medallion.co addresses throughout.
     """
     headers = {"Authorization": f"Bearer {hs_token}"}
     base = "https://api.hubapi.com"
@@ -180,7 +254,9 @@ def _get_engaged_emails(campaign_id: str, hs_token: str) -> tuple[set[str], str,
         after = body["paging"]["next"]["after"]
 
     # Get engaged contacts
-    emails: set[str] = set()
+    engaged: set = set()
+    clicked: set = set()
+    click_dates: dict = {}
     for event_type in ["OPEN", "CLICK"]:
         offset = None
         while True:
@@ -192,13 +268,19 @@ def _get_engaged_emails(campaign_id: str, hs_token: str) -> tuple[set[str], str,
             data = r.json()
             for ev in data.get("events", []):
                 email = ev.get("recipient", "").lower()
-                if email and not email.endswith(f"@{INTERNAL_DOMAIN}"):
-                    emails.add(email)
+                if not email or email.endswith(f"@{INTERNAL_DOMAIN}"):
+                    continue
+                engaged.add(email)
+                if event_type == "CLICK":
+                    clicked.add(email)
+                    ts = _parse_event_dt(ev.get("created"))
+                    if ts and (email not in click_dates or ts < click_dates[email]):
+                        click_dates[email] = ts
             if not data.get("hasMore"):
                 break
             offset = data.get("offset")
 
-    return emails, subject, send_date
+    return EngagementDetail(engaged, clicked, click_dates, subject, send_date)
 
 
 # ─── Salesforce ──────────────────────────────────────────────────────────────
@@ -305,10 +387,134 @@ def _fetch_contact_opps(sf: Salesforce, contact_ids: list[str], send_date: str) 
                 account_id=o["AccountId"],
                 account_name=(o.get("Account") or {}).get("Name", ""),
                 contact_level=True,
+                contact_id=r["ContactId"],
                 contact_role=r.get("Role"),
                 created_post_send=created > send_date,
             ))
     return opps
+
+
+def _fetch_rep_activity(sf: Salesforce, contact_ids: list[str], account_ids: list[str]) -> dict[str, list[str]]:
+    """
+    Looks up Task/Event activity corroborating a contact or account, per:
+    WhatId IN (ContactId, AccountId) OR WhoId = ContactId.
+    Returns a dict mapping each contact_id/account_id to the list of ISO
+    dates (ActivityDate, falling back to CreatedDate) of activity tied to it.
+    """
+    dates_by_id: dict[str, list[str]] = {}
+
+    def _record(id_: Optional[str], date_str: str):
+        if id_ and date_str:
+            dates_by_id.setdefault(id_, []).append(date_str)
+
+    contact_id_set = set(contact_ids)
+    all_ids = list({*contact_ids, *account_ids})
+    if not all_ids:
+        return dates_by_id
+
+    for sobject in ("Task", "Event"):
+        for batch in _chunk(all_ids, 100):
+            contact_batch = [i for i in batch if i in contact_id_set]
+            where = "WhatId IN (" + ", ".join(f"'{i}'" for i in batch) + ")"
+            if contact_batch:
+                where += " OR WhoId IN (" + ", ".join(f"'{c}'" for c in contact_batch) + ")"
+            result = sf.query(
+                f"SELECT WhatId, WhoId, ActivityDate, CreatedDate FROM {sobject} WHERE {where}"
+            )
+            for r in result["records"]:
+                date_str = r.get("ActivityDate") or (r.get("CreatedDate") or "")[:10]
+                _record(r.get("WhatId"), date_str)
+                _record(r.get("WhoId"), date_str)
+
+    return dates_by_id
+
+
+def _apply_signal_tiers(
+    contact_opps: list[Opportunity],
+    contacts: list[SFContact],
+    engagement: EngagementDetail,
+    send_date: str,
+    sf: Salesforce,
+) -> None:
+    """
+    Mutates contact_opps in place, assigning signal_tier / corroborated /
+    click_date_used / click_date_source.
+
+    PRIMARY SIGNAL is click-only (opens don't qualify). An opp is a
+    candidate "followed" tier when its contact clicked and the opp's
+    CreatedDate falls within [click_date, click_date + SIGNAL_WINDOW_DAYS].
+    Per-contact click timestamps come from HubSpot event data where
+    available; falls back to the campaign send date otherwise. Candidates
+    are then corroborated against rep Task/Event activity tied to the
+    contact or account within that same window (+ a small grace period
+    after the opp's creation, since reps often log the touch just after
+    creating the record). Everything else — open-only contacts, or opps
+    outside the 60-day window — lands in "no_signal": still shown, just
+    labeled as a weaker/no signal, never hidden.
+    """
+    email_by_contact_id = {c.contact_id: c.email for c in contacts}
+    fallback_send_dt: Optional[datetime] = None
+    try:
+        fallback_send_dt = datetime.strptime(send_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+
+    candidates: list[Opportunity] = []
+    for o in contact_opps:
+        email = email_by_contact_id.get(o.contact_id)
+        if not email or email not in engagement.clicked_emails:
+            o.signal_tier = "no_signal"
+            continue
+
+        click_dt = engagement.click_dates.get(email)
+        if click_dt is not None:
+            o.click_date_used = click_dt.date().isoformat()
+            o.click_date_source = "hubspot_click_event"
+        elif fallback_send_dt is not None:
+            click_dt = fallback_send_dt
+            o.click_date_used = fallback_send_dt.date().isoformat()
+            o.click_date_source = "campaign_send_date_fallback"
+        else:
+            o.signal_tier = "no_signal"
+            continue
+
+        try:
+            created_dt = datetime.strptime(o.created_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            o.signal_tier = "no_signal"
+            continue
+
+        window_end = click_dt + timedelta(days=SIGNAL_WINDOW_DAYS)
+        if click_dt <= created_dt <= window_end:
+            candidates.append(o)
+        else:
+            o.signal_tier = "no_signal"
+
+    if not candidates:
+        return
+
+    contact_ids = list({o.contact_id for o in candidates if o.contact_id})
+    account_ids = list({o.account_id for o in candidates if o.account_id})
+    activity_dates = _fetch_rep_activity(sf, contact_ids, account_ids)
+
+    for o in candidates:
+        click_dt = datetime.fromisoformat(o.click_date_used).replace(tzinfo=timezone.utc)
+        created_dt = datetime.strptime(o.created_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        grace_end = created_dt + timedelta(days=CORROBORATION_GRACE_DAYS)
+
+        candidate_dates = activity_dates.get(o.contact_id, []) + activity_dates.get(o.account_id, [])
+        corroborated = False
+        for d in candidate_dates:
+            try:
+                dt = datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if click_dt <= dt <= grace_end:
+                corroborated = True
+                break
+
+        o.corroborated = corroborated
+        o.signal_tier = "directly_followed" if corroborated else "followed_uncorroborated"
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
@@ -320,8 +526,9 @@ def analyze_campaign_pipeline(
     hs_token = hs_token or os.environ["HUBSPOT_ACCESS_TOKEN"]
 
     print(f"Fetching engaged contacts for campaign {campaign_id}…")
-    emails, subject, send_date = _get_engaged_emails(campaign_id, hs_token)
-    print(f"  {len(emails)} external engaged contacts | send date: {send_date}")
+    engagement = _get_engaged_emails(campaign_id, hs_token)
+    emails, subject, send_date = engagement.engaged_emails, engagement.subject, engagement.send_date
+    print(f"  {len(emails)} external engaged contacts ({len(engagement.clicked_emails)} clicked) | send date: {send_date}")
 
     print("Matching to Salesforce contacts…")
     sf = _sf_connect()
@@ -339,6 +546,11 @@ def analyze_campaign_pipeline(
     print("Fetching contact-level opportunities…")
     contact_opps = _fetch_contact_opps(sf, contact_ids, send_date)
     print(f"  {len(contact_opps)} unique opps with this contact on the deal")
+
+    print(f"Applying {SIGNAL_WINDOW_DAYS}-day click-signal tiers + rep activity corroboration…")
+    _apply_signal_tiers(contact_opps, contacts, engagement, send_date, sf)
+    tier_counts = Counter(o.signal_tier for o in contact_opps)
+    print(f"  {dict(tier_counts)}")
 
     return PipelineResult(
         campaign_id=campaign_id,
@@ -384,6 +596,12 @@ def print_pipeline_report(result: PipelineResult) -> None:
     section("Contact-level (this person is on the deal)", result.contact_opps)
     section("Account-level (any opp at matched accounts)", result.account_opps)
 
+    tier_counts = Counter(o.signal_tier for o in result.contact_opps)
+    print("  ── Signal tiers (contact-level, 60-day click window) ──")
+    for tier in ("directly_followed", "followed_uncorroborated", "no_signal"):
+        print(f"     {TIER_LABELS[tier]:<28} {tier_counts.get(tier, 0)}")
+    print()
+
     # Top open opps (contact-level, sorted by amount)
     top = sorted([o for o in result.contact_opps if not o.is_closed],
                  key=lambda o: -o.amount)[:5]
@@ -391,9 +609,11 @@ def print_pipeline_report(result: PipelineResult) -> None:
         print("  ── Top Open Opportunities (contact-level) ──")
         for o in top:
             post = " ★" if o.created_post_send else ""
-            print(f"     ${o.amount:>10,.0f}  {o.stage:<28} {o.account_name}{post}")
+            tier = TIER_LABELS.get(o.signal_tier, "")
+            print(f"     ${o.amount:>10,.0f}  {o.stage:<28} {o.account_name}{post}  [{tier}]")
     print()
-    print("  ★ = created after email send date — stronger signal")
+    print("  ★ = created any time after email send date (no day limit)")
+    print("  Signal tiers = association signals, not causal attribution — see TIER_LABELS")
     print("  Note: labeled 'associated', not attributed")
     print("=" * 65)
 

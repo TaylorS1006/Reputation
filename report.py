@@ -471,6 +471,10 @@ def _render_html(
   .pipeline-section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 12px; }}
   .pipeline-table-wrap {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }}
   .post-send-badge {{ display: inline-block; background: #dcfce7; color: #15803d; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }}
+  .pipeline-tier-chip {{ display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px; margin-right: 6px; }}
+  .tier-directly {{ background: #dcfce7; color: #15803d; }}
+  .tier-uncorroborated {{ background: #fef3c7; color: #b45309; }}
+  .tier-none {{ background: #f1f5f9; color: #64748b; }}
   .pipeline-disclaimer {{ font-size: 12px; color: #94a3b8; margin-top: 8px; font-style: italic; }}
   .pipeline-empty {{ color: #94a3b8; font-size: 15px; padding: 60px; text-align: center; background: white; border-radius: 12px; }}
 
@@ -797,9 +801,16 @@ function selectPipelineCampaigns(from, to, type, campaign) {{
   }});
 }}
 
+// Honest, non-causal labels for contact-level signal tiers — never "caused" or "attributed".
+const TIER_LABELS = {{ directly_followed: 'Directly followed', followed_uncorroborated: 'Followed, uncorroborated', no_signal: 'No qualifying signal' }};
+const TIER_RANK = {{ directly_followed: 2, followed_uncorroborated: 1, no_signal: 0 }};
+const TIER_CLASS = {{ directly_followed: 'tier-directly', followed_uncorroborated: 'tier-uncorroborated', no_signal: 'tier-none' }};
+
 // Merge N campaigns into one rollup: dedupe matched contacts by email and
 // opportunities by id so a contact/deal touched by multiple campaigns in the
-// selected range is only counted once.
+// selected range is only counted once. When the same opportunity shows up
+// under more than one campaign with different signal tiers, keep the
+// strongest tier found (directly_followed > followed_uncorroborated > no_signal).
 function aggregatePipeline(entries) {{
   const oppById = new Map();
   const emailSet = new Set();
@@ -815,6 +826,12 @@ function aggregatePipeline(entries) {{
       }} else {{
         existing.contact_level = existing.contact_level || o.contact_level;
         existing.post_send = existing.post_send || o.post_send;
+        if ((TIER_RANK[o.signal_tier] ?? -1) > (TIER_RANK[existing.signal_tier] ?? -1)) {{
+          existing.signal_tier = o.signal_tier;
+          existing.corroborated = o.corroborated;
+          existing.click_date_used = o.click_date_used;
+          existing.click_date_source = o.click_date_source;
+        }}
       }}
     }});
   }});
@@ -839,6 +856,9 @@ function aggregatePipeline(entries) {{
   const topOpps = contactOpps.filter(o => !o.is_closed)
     .sort((x, y) => y.amount - x.amount).slice(0, 10);
 
+  const tierCounts = {{ directly_followed: 0, followed_uncorroborated: 0, no_signal: 0 }};
+  contactOpps.forEach(o => {{ if (tierCounts.hasOwnProperty(o.signal_tier)) tierCounts[o.signal_tier]++; }});
+
   return {{
     campaignCount: entries.length,
     total_engaged: totalEngaged,
@@ -850,6 +870,7 @@ function aggregatePipeline(entries) {{
     account_won_count: a.won_count, account_won_value: a.won_value,
     account_post_count: a.post_count, account_post_value: a.post_value,
     top_opps: topOpps,
+    tier_counts: tierCounts,
   }};
 }}
 
@@ -876,25 +897,35 @@ function renderPipeline() {{
 
   let oppsRows = '';
   d.top_opps.forEach(o => {{
-    const badge = o.post_send ? '<span class="post-send-badge">POST-SEND</span>' : '';
+    const postBadge = o.post_send ? '<span class="post-send-badge">POST-SEND</span>' : '';
+    const tierBadge = o.signal_tier
+      ? `<span class="pipeline-tier-chip ${{TIER_CLASS[o.signal_tier]}}">${{TIER_LABELS[o.signal_tier]}}</span>` : '';
     oppsRows += `<tr>
-      <td>${{o.account}}${{badge}}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
+      <td>${{o.account}}${{postBadge}}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
       <td>${{o.stage}}</td>
+      <td>${{tierBadge}}</td>
       <td style="text-align:right;font-weight:700">${{fmt$(o.amount)}}</td>
     </tr>`;
   }});
-  if (!oppsRows) oppsRows = '<tr><td colspan="4" style="color:#94a3b8">No open contact-level opportunities found.</td></tr>';
+  if (!oppsRows) oppsRows = '<tr><td colspan="5" style="color:#94a3b8">No open contact-level opportunities found.</td></tr>';
 
   const scopeLabel = d.campaignCount === 1
     ? `Sent ${{entries[0][1].send_date}}`
     : `${{d.campaignCount}} campaigns in range`;
+
+  const tierLine = `
+    <span class="pipeline-tier-chip tier-directly">${{d.tier_counts.directly_followed}} directly followed</span>
+    <span class="pipeline-tier-chip tier-uncorroborated">${{d.tier_counts.followed_uncorroborated}} followed, uncorroborated</span>
+    <span class="pipeline-tier-chip tier-none">${{d.tier_counts.no_signal}} no qualifying signal</span>
+  `;
 
   el.innerHTML = `
     <div class="pipeline-meta">
       ${{scopeLabel}} &nbsp;·&nbsp;
       <strong>${{d.total_matched}}</strong> unique contacts matched in Salesforce (${{d.total_engaged}} total engaged touches, ${{matchPct}}%)
     </div>
+    <div class="pipeline-meta">${{tierLine}}</div>
     <div class="pipeline-cards">
       <div class="pipeline-card">
         <div class="pipeline-card-label">Contact-Level Open Pipeline</div>
@@ -918,11 +949,19 @@ function renderPipeline() {{
     <p class="pipeline-section-title">Top Open Opportunities (contact-level)</p>
     <div class="pipeline-table-wrap">
       <table>
-        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th>Signal</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${{oppsRows}}</tbody>
       </table>
     </div>
-    <p class="pipeline-disclaimer">★ = opportunity created after the email send date — stronger association signal. All figures use Opportunity_Amount__c. Labeled "associated", not attributed. Matched contacts and pipeline value are deduplicated across every campaign in the selected range; "total engaged touches" is summed per campaign and is not deduplicated.</p>
+    <p class="pipeline-disclaimer">
+      ★ POST-SEND = opportunity created any time after the email send date (no day limit).
+      Signal tiers apply to contact-level opportunities only, aligned to Medallion's 60-day attribution window:
+      <strong>Directly followed</strong> = contact clicked and the opp was created within 60 days after that click, with a rep Task/Event tying the contact or account to that window;
+      <strong>Followed, uncorroborated</strong> = same click + 60-day match, no rep activity found;
+      <strong>No qualifying signal</strong> = contact only opened (never clicked), or the opp falls outside the 60-day window — still shown, never hidden.
+      Account-level opportunities are not tiered. These are association signals, not causal attribution — no tier means the email "caused" or should be credited with the deal.
+      All figures use Opportunity_Amount__c. Matched contacts and pipeline value are deduplicated across every campaign in the selected range; "total engaged touches" is summed per campaign and is not deduplicated.
+    </p>
   `;
 }}
 
