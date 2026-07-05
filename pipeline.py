@@ -9,14 +9,13 @@ specific person is on the deal).
 
 Contact-level opportunities are further sorted into signal tiers, using an
 attribution window of SIGNAL_WINDOW_DAYS after the contact's click:
-  - "directly_followed"        — displayed as "Followed by rep activity" — the
-                                  opportunity was created within the window
-                                  after the contact's click, AND a rep
-                                  Task/Event ties the contact or account to
-                                  that window (corroborated).
-  - "followed_uncorroborated"  — same window match, but no rep Task/Event
-                                  found in it.
-  - "no_signal"                — the opp falls outside the window.
+  - "directly_followed"  — displayed as "Directly followed" — the opportunity
+                            was created within the window after the contact's
+                            click, AND a rep Task/Event ties the contact or
+                            account to that window (corroborated).
+  - "no_signal"           — everything else: outside the window, or inside
+                            the window but with no corroborating rep Task/
+                            Event found.
 Opportunities created more than STALE_OPP_EXCLUSION_DAYS before the click are
 excluded from contact-level results entirely — too old to plausibly relate to
 this engagement at all, rather than a "no signal" case worth showing.
@@ -65,8 +64,7 @@ STALE_OPP_EXCLUSION_DAYS = 365
 # Honest, non-causal labels for contact-level signal tiers — never "caused"
 # or "attributed".
 TIER_LABELS = {
-    "directly_followed": "Followed by rep activity",
-    "followed_uncorroborated": "Followed, uncorroborated",
+    "directly_followed": "Directly followed",
     "no_signal": "No qualifying signal",
 }
 
@@ -106,7 +104,7 @@ class Opportunity:
     created_post_send: bool = False      # created any time after send date (no day limit)
 
     # Contact-level signal tiering (None for account-level opportunities).
-    signal_tier: Optional[str] = None       # "directly_followed" | "followed_uncorroborated" | "no_signal"
+    signal_tier: Optional[str] = None       # "directly_followed" | "no_signal"
     corroborated: Optional[bool] = None     # only set when signal_tier is one of the two "followed" tiers
     click_date_used: Optional[str] = None   # ISO date of the click signal, if the contact clicked at all
     click_date_source: Optional[str] = None  # "hubspot_click_event" | "campaign_send_date_fallback"
@@ -441,15 +439,17 @@ def _apply_signal_tiers(
 
     Every contact here already clicked — matching upstream (analyze_campaign_
     pipeline) is click-only, so there's no "opened but didn't click" case to
-    filter out. An opp is a candidate "followed" tier when its CreatedDate
-    falls within [click_date, click_date + SIGNAL_WINDOW_DAYS]. Per-contact
-    click timestamps come from HubSpot event data where available; falls
-    back to the campaign send date otherwise. Candidates are then
-    corroborated against rep Task/Event activity tied to the contact or
-    account within that same window (+ a small grace period after the opp's
-    creation, since reps often log the touch just after creating the
-    record). Opps outside the window land in "no_signal": still shown, just
-    labeled as a weaker/no signal, never hidden.
+    filter out. An opp is a candidate for "directly_followed" when its
+    CreatedDate falls within [click_date, click_date + SIGNAL_WINDOW_DAYS].
+    Per-contact click timestamps come from HubSpot event data where
+    available; falls back to the campaign send date otherwise. Candidates
+    are then corroborated against rep Task/Event activity tied to the
+    contact or account within that same window (+ a small grace period
+    after the opp's creation, since reps often log the touch just after
+    creating the record) — only a corroborated candidate becomes
+    "directly_followed"; everything else (outside the window, or inside it
+    but uncorroborated) lands in "no_signal": still shown, just labeled as
+    a weaker/no signal, never hidden.
     """
     email_by_contact_id = {c.contact_id: c.email for c in contacts}
     fallback_send_dt: Optional[datetime] = None
@@ -521,7 +521,7 @@ def _apply_signal_tiers(
                 break
 
         o.corroborated = corroborated
-        o.signal_tier = "directly_followed" if corroborated else "followed_uncorroborated"
+        o.signal_tier = "directly_followed" if corroborated else "no_signal"
 
     return retained
 
@@ -608,7 +608,7 @@ def print_pipeline_report(result: PipelineResult) -> None:
 
     tier_counts = Counter(o.signal_tier for o in result.contact_opps)
     print(f"  ── Signal tiers (contact-level, {SIGNAL_WINDOW_DAYS}-day click window) ──")
-    for tier in ("directly_followed", "followed_uncorroborated", "no_signal"):
+    for tier in ("directly_followed", "no_signal"):
         print(f"     {TIER_LABELS[tier]:<28} {tier_counts.get(tier, 0)}")
     print()
 

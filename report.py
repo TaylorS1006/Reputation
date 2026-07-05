@@ -469,11 +469,11 @@ def _render_html(
   .pipeline-card-sub {{ font-size: 12px; color: #64748b; }}
   .pipeline-card-post {{ font-size: 12px; color: #16a34a; font-weight: 600; margin-top: 6px; }}
   .pipeline-section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 12px; }}
-  .pipeline-table-wrap {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; margin-bottom: 24px; }}
+  .pipeline-table-wrap {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px; }}
+  .pipeline-table-wrap table {{ min-width: 900px; }}
   .post-send-badge {{ display: inline-block; background: #dcfce7; color: #15803d; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }}
   .pipeline-tier-chip {{ display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px; margin-right: 6px; }}
   .tier-directly {{ background: #dcfce7; color: #15803d; }}
-  .tier-uncorroborated {{ background: #fef3c7; color: #b45309; }}
   .tier-none {{ background: #f1f5f9; color: #64748b; }}
   .pipeline-tier-timing {{ font-size: 10px; color: #94a3b8; margin-top: 4px; white-space: nowrap; }}
   .pipeline-disclaimer {{ font-size: 12px; color: #94a3b8; margin-top: 8px; font-style: italic; }}
@@ -803,9 +803,9 @@ function selectPipelineCampaigns(from, to, type, campaign) {{
 }}
 
 // Honest, non-causal labels for contact-level signal tiers — never "caused" or "attributed".
-const TIER_LABELS = {{ directly_followed: 'Followed by rep activity', followed_uncorroborated: 'Followed, uncorroborated', no_signal: 'No qualifying signal' }};
-const TIER_RANK = {{ directly_followed: 2, followed_uncorroborated: 1, no_signal: 0 }};
-const TIER_CLASS = {{ directly_followed: 'tier-directly', followed_uncorroborated: 'tier-uncorroborated', no_signal: 'tier-none' }};
+const TIER_LABELS = {{ directly_followed: 'Directly followed', no_signal: 'No qualifying signal' }};
+const TIER_RANK = {{ directly_followed: 1, no_signal: 0 }};
+const TIER_CLASS = {{ directly_followed: 'tier-directly', no_signal: 'tier-none' }};
 const SIGNAL_WINDOW_DAYS = 90; // mirrors pipeline.py's SIGNAL_WINDOW_DAYS
 
 // Shows created-vs-click dates and the day delta driving the tier verdict.
@@ -824,7 +824,7 @@ function tierTimingLabel(o) {{
 // opportunities by id so a contact/deal touched by multiple campaigns in the
 // selected range is only counted once. When the same opportunity shows up
 // under more than one campaign with different signal tiers, keep the
-// strongest tier found (directly_followed > followed_uncorroborated > no_signal).
+// strongest tier found (directly_followed > no_signal).
 function aggregatePipeline(entries) {{
   const oppById = new Map();
   const emailSet = new Set();
@@ -873,7 +873,7 @@ function aggregatePipeline(entries) {{
   const topAccountOpps = accountOpps.filter(o => !o.is_closed)
     .sort((x, y) => y.amount - x.amount).slice(0, 10);
 
-  const tierCounts = {{ directly_followed: 0, followed_uncorroborated: 0, no_signal: 0 }};
+  const tierCounts = {{ directly_followed: 0, no_signal: 0 }};
   contactOpps.forEach(o => {{ if (tierCounts.hasOwnProperty(o.signal_tier)) tierCounts[o.signal_tier]++; }});
 
   return {{
@@ -954,8 +954,7 @@ function renderPipeline() {{
     : `${{d.campaignCount}} campaigns in range`;
 
   const tierLine = `
-    <span class="pipeline-tier-chip tier-directly">${{d.tier_counts.directly_followed}} followed by rep activity</span>
-    <span class="pipeline-tier-chip tier-uncorroborated">${{d.tier_counts.followed_uncorroborated}} followed, uncorroborated</span>
+    <span class="pipeline-tier-chip tier-directly">${{d.tier_counts.directly_followed}} directly followed</span>
     <span class="pipeline-tier-chip tier-none">${{d.tier_counts.no_signal}} no qualifying signal</span>
   `;
 
@@ -1004,9 +1003,8 @@ function renderPipeline() {{
       Engagement here means clicked — opens no longer count anywhere in Pipeline Association, including which contacts/accounts pull in opportunities at all.
       ★ POST-SEND = opportunity created any time after the email send date (no day limit).
       Signal tiers apply to contact-level opportunities only, using a 90-day attribution window from the contact's click. Opportunities created more than 365 days before the click are excluded entirely as too old to plausibly relate.
-      <strong>Followed by rep activity</strong> = the opp was created within 90 days after the contact's click, with a rep Task/Event tying the contact or account to that window;
-      <strong>Followed, uncorroborated</strong> = same 90-day match, no rep activity found;
-      <strong>No qualifying signal</strong> = the opp falls outside the 90-day window — still shown, never hidden.
+      <strong>Directly followed</strong> = the opp was created within 90 days after the contact's click, with a rep Task/Event tying the contact or account to that window;
+      <strong>No qualifying signal</strong> = everything else — outside the 90-day window, or inside it with no corroborating rep activity found — still shown, never hidden.
       Account-level opportunities are not tiered. These are association signals, not causal attribution — no tier means the email "caused" or should be credited with the deal.
       All figures use Opportunity_Amount__c. Matched contacts and pipeline value are deduplicated across every campaign in the selected range; "total click touches" is summed per campaign and is not deduplicated.
     </p>
