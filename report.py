@@ -329,15 +329,33 @@ def _render_html(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reputation — Medallion</title>
 <style>
+  :root {{
+    --color-bg: #E9E6DF;
+    --color-border: #A29A90;
+    --color-text: #0E0E0F;
+    --color-sidebar: #52451B;
+    --color-primary-hover: #754F4D;
+    --color-accent: #9B756E;
+    --color-good: #7B745B;
+    --color-caution: #947B50;
+    --color-avoid: #433F2A;
+    /* Metric cards — one solid color each, reused wherever a card-specific accent is needed */
+    --color-card-1: #BDA49B;  /* Delivered rate */
+    --color-card-2: #754F4D;  /* Open rate */
+    --color-card-3: #9B756E;  /* Click rate */
+    --color-card-4: #7B745B;  /* CTOR */
+    --color-card-5: #433F2A;  /* Unsubscribe rate */
+    --color-card-6: #947B50;  /* Bounce rate */
+  }}
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1a1a2e; display: flex; height: 100vh; overflow: hidden; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--color-bg); color: var(--color-text); display: flex; height: 100vh; overflow: hidden; }}
 
   /* ── Sidebar ── */
   .sidebar {{
     width: 220px;
     min-width: 220px;
-    background: #f1f5f9;
-    border-right: 1px solid #e2e8f0;
+    background: var(--color-sidebar);
+    border-right: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -347,10 +365,10 @@ def _render_html(
   }}
   .sidebar-logo {{
     padding: 28px 24px 20px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--color-primary-hover);
   }}
-  .sidebar-logo h1 {{ font-size: 17px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; }}
-  .sidebar-logo p {{ font-size: 11px; color: #94a3b8; margin-top: 3px; }}
+  .sidebar-logo h1 {{ font-size: 17px; font-weight: 700; color: var(--color-bg); letter-spacing: -0.02em; }}
+  .sidebar-logo p {{ font-size: 11px; color: var(--color-border); margin-top: 3px; }}
   .sidebar-nav {{ flex: 1; padding: 12px 12px; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }}
   .nav-item {{
     display: block;
@@ -360,20 +378,21 @@ def _render_html(
     border-radius: 8px;
     font-size: 14px;
     font-weight: 500;
-    color: #475569;
+    color: var(--color-bg);
+    opacity: 0.72;
     cursor: pointer;
     border: none;
     background: none;
-    transition: color 0.12s, background 0.12s;
+    transition: color 0.12s, background 0.12s, opacity 0.12s;
     letter-spacing: 0;
   }}
-  .nav-item:hover {{ color: #0f172a; background: #e2e8f0; }}
-  .nav-item.active {{ color: #5b21b6; background: #ede9fe; font-weight: 600; }}
+  .nav-item:hover {{ opacity: 1; background: var(--color-primary-hover); }}
+  .nav-item.active {{ opacity: 1; color: var(--color-text); background: var(--color-bg); font-weight: 600; }}
   .sidebar-footer {{
     padding: 16px 24px;
     font-size: 11px;
-    color: #94a3b8;
-    border-top: 1px solid #e2e8f0;
+    color: var(--color-border);
+    border-top: 1px solid var(--color-primary-hover);
   }}
 
   /* ── Main content ── */
@@ -382,119 +401,130 @@ def _render_html(
     flex: 1;
     height: 100vh;
     overflow-y: auto;
-    background: #f8fafc;
+    background: var(--color-bg);
   }}
   .view {{ display: none; max-width: 1100px; margin: 0 auto; padding: 32px 28px; }}
   .view.active {{ display: block; }}
-  .view-title {{ font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 24px; }}
+  .view-title {{ font-size: 22px; font-weight: 700; color: var(--color-text); margin-bottom: 24px; }}
 
   /* ── Filters ── */
   .filters {{ display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }}
   .filter-group {{ display: flex; flex-direction: column; gap: 4px; }}
-  .filter-group label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }}
+  .filter-group label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary-hover); }}
   .filters select, .filters input[type=date] {{
-    background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-    padding: 8px 12px; font-size: 13px; color: #1a1a2e; cursor: pointer;
+    background: white; border: 1px solid var(--color-border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; color: var(--color-text); cursor: pointer;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04); min-width: 160px;
   }}
-  .filters select:focus, .filters input[type=date]:focus {{ outline: none; border-color: #5b21b6; }}
-  .filter-sep {{ color: #cbd5e1; font-size: 18px; align-self: flex-end; padding-bottom: 8px; }}
+  .filters select:focus, .filters input[type=date]:focus {{ outline: none; border-color: var(--color-accent); }}
+  .filter-sep {{ color: var(--color-border); font-size: 18px; align-self: flex-end; padding-bottom: 8px; }}
 
   /* ── Metric cards ── */
   .metric-bar {{ display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 28px; }}
-  .metric-card {{ border-radius: 14px; padding: 20px 18px; color: white; position: relative; overflow: hidden; }}
-  .metric-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.7; margin-bottom: 10px; }}
-  .metric-value {{ font-size: 30px; font-weight: 800; line-height: 1; margin-bottom: 8px; }}
-  .metric-delta {{ font-size: 12px; opacity: 0.85; }}
-  .metric-benchmark {{ font-size: 11px; opacity: 0.45; margin-top: 4px; }}
-  .metric-delta.up-good {{ color: #86efac; }}
-  .metric-delta.down-good {{ color: #86efac; }}
-  .metric-delta.up-bad {{ color: #fca5a5; }}
-  .metric-delta.down-bad {{ color: #fca5a5; }}
+  .metric-card {{ border-radius: 14px; padding: 20px 18px; color: white; position: relative; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }}
+  .metric-card-1 {{ background: var(--color-card-1); }}
+  .metric-card-2 {{ background: var(--color-card-2); }}
+  .metric-card-3 {{ background: var(--color-card-3); }}
+  .metric-card-4 {{ background: var(--color-card-4); }}
+  .metric-card-5 {{ background: var(--color-card-5); }}
+  .metric-card-6 {{ background: var(--color-card-6); }}
+  .metric-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: white; opacity: 0.85; margin-bottom: 10px; }}
+  .metric-value {{ font-size: 30px; font-weight: 800; line-height: 1; margin-bottom: 8px; color: white; }}
+  .metric-delta {{ font-size: 12px; font-weight: 600; }}
+  .metric-benchmark {{ font-size: 11px; font-weight: 600; margin-top: 4px; }}
+  /* Delta/benchmark text color is chosen per card for contrast against that
+     card's specific solid background (e.g. card-1 is light, needs dark text;
+     card-5 is very dark, needs light text) — not a good/bad semantic. */
+  .metric-card-1 .metric-delta, .metric-card-1 .metric-benchmark {{ color: var(--color-text); }}
+  .metric-card-2 .metric-delta, .metric-card-2 .metric-benchmark {{ color: white; }}
+  .metric-card-3 .metric-delta, .metric-card-3 .metric-benchmark {{ color: var(--color-text); }}
+  .metric-card-4 .metric-delta, .metric-card-4 .metric-benchmark {{ color: white; }}
+  .metric-card-5 .metric-delta, .metric-card-5 .metric-benchmark {{ color: white; }}
+  .metric-card-6 .metric-delta, .metric-card-6 .metric-benchmark {{ color: var(--color-text); }}
 
   /* ── Summary table ── */
-  .section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 12px; }}
+  .section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary-hover); margin-bottom: 12px; }}
   .summary-card {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); margin-bottom: 28px; overflow: hidden; }}
   table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-  thead {{ background: #f8fafc; }}
-  th {{ padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; }}
-  td {{ padding: 12px 16px; border-bottom: 1px solid #f1f5f9; }}
+  thead {{ background: var(--color-bg); }}
+  th {{ padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary-hover); }}
+  td {{ padding: 12px 16px; border-bottom: 1px solid var(--color-border); }}
   tr:last-child td {{ border-bottom: none; }}
-  .benchmark-row td {{ font-size: 12px; color: #cbd5e1; font-style: italic; background: #fafafa; }}
+  .benchmark-row td {{ font-size: 12px; color: var(--color-border); font-style: italic; background: var(--color-bg); }}
   .data-row {{ cursor: pointer; transition: background 0.1s; }}
-  .data-row:hover {{ background: #f8fafc; }}
-  .data-row.active {{ background: #f5f3ff; }}
-  .data-row.active .type-cell {{ color: #5b21b6; font-weight: 600; }}
+  .data-row:hover {{ background: var(--color-bg); }}
+  .data-row.active {{ background: var(--color-bg); }}
+  .data-row.active .type-cell {{ color: var(--color-accent); font-weight: 600; }}
   .type-cell {{ text-transform: capitalize; font-weight: 500; }}
-  td.good {{ color: #16a34a; font-weight: 600; }}
-  td.ok {{ color: #d97706; font-weight: 600; }}
-  td.bad {{ color: #dc2626; font-weight: 600; }}
+  td.good {{ color: var(--color-good); font-weight: 600; }}
+  td.ok {{ color: var(--color-caution); font-weight: 600; }}
+  td.bad {{ color: var(--color-avoid); font-weight: 600; }}
 
   /* ── Playbook ── */
   .playbook-header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }}
-  .playbook-header h2 {{ font-size: 17px; font-weight: 600; text-transform: capitalize; }}
-  .playbook-header .sample-count {{ font-size: 13px; color: #94a3b8; font-weight: 400; margin-left: 8px; }}
+  .playbook-header h2 {{ font-size: 17px; font-weight: 600; text-transform: capitalize; color: var(--color-text); }}
+  .playbook-header .sample-count {{ font-size: 13px; color: var(--color-border); font-weight: 400; margin-left: 8px; }}
   .select-styled {{
     appearance: none;
-    background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center;
-    border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 36px 8px 14px;
-    font-size: 13px; font-weight: 500; color: #1a1a2e; cursor: pointer; min-width: 180px;
+    background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A29A90' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center;
+    border: 1px solid var(--color-border); border-radius: 8px; padding: 8px 36px 8px 14px;
+    font-size: 13px; font-weight: 500; color: var(--color-text); cursor: pointer; min-width: 180px;
   }}
   .playbook-card {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 24px; }}
   .insights-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }}
-  .insight-card {{ background: #f8fafc; border-radius: 8px; padding: 14px; }}
-  .insight-card h3 {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin-bottom: 7px; }}
-  .insight-card p {{ font-size: 13px; line-height: 1.65; color: #374151; }}
-  .top-label {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin-bottom: 8px; }}
-  .top-emails thead {{ background: #f8fafc; }}
+  .insight-card {{ background: var(--color-bg); border-radius: 8px; padding: 14px; }}
+  .insight-card h3 {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-primary-hover); margin-bottom: 7px; }}
+  .insight-card p {{ font-size: 13px; line-height: 1.65; color: var(--color-text); }}
+  .top-label {{ font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-primary-hover); margin-bottom: 8px; }}
+  .top-emails thead {{ background: var(--color-bg); }}
   .top-emails th, .top-emails td {{ padding: 9px 12px; font-size: 13px; }}
-  .insufficient-note {{ color: #d97706; font-size: 14px; padding: 8px 0; }}
+  .insufficient-note {{ color: var(--color-caution); font-size: 14px; padding: 8px 0; }}
 
   /* ── AI Summary ── */
-  .ai-summary-card {{ background: #fafbff; border: 1px solid #e0e7ff; border-radius: 12px; padding: 20px 24px; margin-bottom: 28px; }}
-  .ai-summary-header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #6366f1; }}
-  .ai-summary-text {{ font-size: 14px; line-height: 1.65; color: #374151; margin-bottom: 12px; }}
+  .ai-summary-card {{ background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 20px 24px; margin-bottom: 28px; }}
+  .ai-summary-header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-accent); }}
+  .ai-summary-text {{ font-size: 14px; line-height: 1.65; color: var(--color-text); margin-bottom: 12px; }}
   .ai-summary-recs {{ list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }}
-  .ai-summary-recs li {{ font-size: 13px; color: #374151; padding-left: 18px; position: relative; line-height: 1.5; }}
-  .ai-summary-recs li::before {{ content: "→"; position: absolute; left: 0; color: #6366f1; font-weight: 700; }}
-  .ai-summary-note {{ font-size: 11px; color: #94a3b8; margin-top: 10px; }}
+  .ai-summary-recs li {{ font-size: 13px; color: var(--color-text); padding-left: 18px; position: relative; line-height: 1.5; }}
+  .ai-summary-recs li::before {{ content: "→"; position: absolute; left: 0; color: var(--color-accent); font-weight: 700; }}
+  .ai-summary-note {{ font-size: 11px; color: var(--color-border); margin-top: 10px; }}
 
   /* ── Pipeline ── */
-  .pipeline-meta {{ font-size: 13px; color: #64748b; margin-bottom: 20px; }}
-  .pipeline-meta strong {{ color: #1a1a2e; }}
+  .pipeline-meta {{ font-size: 13px; color: var(--color-border); margin-bottom: 20px; }}
+  .pipeline-meta strong {{ color: var(--color-text); }}
   .pipeline-cards {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }}
-  .pipeline-card {{ background: white; border-radius: 14px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }}
-  .pipeline-card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: #94a3b8; margin-bottom: 8px; }}
-  .pipeline-card-value {{ font-size: 26px; font-weight: 800; color: #1a1a2e; line-height: 1; margin-bottom: 4px; }}
-  .pipeline-card-sub {{ font-size: 12px; color: #64748b; }}
-  .pipeline-card-post {{ font-size: 12px; color: #16a34a; font-weight: 600; margin-top: 6px; }}
-  .pipeline-section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 12px; }}
-  .pipeline-table-wrap {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px; }}
+  .pipeline-card {{ background: white; border: 1px solid var(--color-border); border-radius: 14px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }}
+  .pipeline-card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-primary-hover); margin-bottom: 8px; }}
+  .pipeline-card-value {{ font-size: 26px; font-weight: 800; color: var(--color-text); line-height: 1; margin-bottom: 4px; }}
+  .pipeline-card-sub {{ font-size: 12px; color: var(--color-border); }}
+  .pipeline-card-post {{ font-size: 12px; color: var(--color-good); font-weight: 600; margin-top: 6px; }}
+  .pipeline-section-title {{ font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-primary-hover); margin-bottom: 12px; }}
+  .pipeline-table-wrap {{ background: white; border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px; }}
   .pipeline-table-wrap table {{ min-width: 900px; }}
-  .post-send-badge {{ display: inline-block; background: #dcfce7; color: #15803d; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }}
+  .post-send-badge {{ display: inline-block; background: var(--color-bg); color: var(--color-good); font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 99px; letter-spacing: 0.04em; margin-left: 6px; vertical-align: middle; }}
   .pipeline-tier-chip {{ display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px; margin-right: 6px; }}
-  .tier-directly {{ background: #dcfce7; color: #15803d; }}
-  .tier-none {{ background: #f1f5f9; color: #64748b; }}
-  .pipeline-tier-timing {{ font-size: 10px; color: #94a3b8; margin-top: 4px; white-space: nowrap; }}
-  .pipeline-disclaimer {{ font-size: 12px; color: #94a3b8; margin-top: 8px; font-style: italic; }}
-  .pipeline-empty {{ color: #94a3b8; font-size: 15px; padding: 60px; text-align: center; background: white; border-radius: 12px; }}
+  .tier-directly {{ background: var(--color-bg); color: var(--color-good); }}
+  .tier-none {{ background: var(--color-bg); color: var(--color-border); }}
+  .pipeline-tier-timing {{ font-size: 10px; color: var(--color-border); margin-top: 4px; white-space: nowrap; }}
+  .pipeline-disclaimer {{ font-size: 12px; color: var(--color-border); margin-top: 8px; font-style: italic; }}
+  .pipeline-empty {{ color: var(--color-border); font-size: 15px; padding: 60px; text-align: center; background: white; border-radius: 12px; }}
 
   /* ── Placeholder views ── */
   .placeholder-card {{ background: white; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 64px 40px; text-align: center; max-width: 480px; margin: 60px auto 0; }}
-  .placeholder-card h2 {{ font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 10px; }}
-  .placeholder-card p {{ font-size: 14px; color: #64748b; line-height: 1.6; }}
-  .placeholder-badge {{ display: inline-block; background: #f3f0ff; color: #5b21b6; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; padding: 4px 12px; border-radius: 99px; margin-bottom: 20px; text-transform: uppercase; }}
+  .placeholder-card h2 {{ font-size: 20px; font-weight: 700; color: var(--color-text); margin-bottom: 10px; }}
+  .placeholder-card p {{ font-size: 14px; color: var(--color-border); line-height: 1.6; }}
+  .placeholder-badge {{ display: inline-block; background: var(--color-bg); color: var(--color-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.07em; padding: 4px 12px; border-radius: 99px; margin-bottom: 20px; text-transform: uppercase; }}
 
   /* ── Settings ── */
   .settings-section {{ background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 24px; margin-bottom: 20px; }}
-  .settings-section h3 {{ font-size: 14px; font-weight: 600; color: #1a1a2e; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }}
-  .settings-row {{ display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f8fafc; }}
+  .settings-section h3 {{ font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); }}
+  .settings-row {{ display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--color-border); }}
   .settings-row:last-child {{ border-bottom: none; }}
-  .settings-row-label {{ font-size: 13px; color: #374151; font-weight: 500; }}
-  .settings-row-value {{ font-size: 13px; color: #64748b; }}
+  .settings-row-label {{ font-size: 13px; color: var(--color-text); font-weight: 500; }}
+  .settings-row-value {{ font-size: 13px; color: var(--color-border); }}
   .status-dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }}
-  .status-dot.green {{ background: #16a34a; }}
-  .status-dot.red {{ background: #dc2626; }}
+  .status-dot.green {{ background: var(--color-good); }}
+  .status-dot.red {{ background: var(--color-avoid); }}
 
   @media (max-width: 900px) {{
     .sidebar {{ width: 180px; min-width: 180px; }}
@@ -554,35 +584,35 @@ def _render_html(
     </div>
 
     <div class="metric-bar" id="metric-bar">
-      <div class="metric-card" style="background:linear-gradient(135deg,#1e3a5f,#2563eb)">
+      <div class="metric-card metric-card-1">
         <div class="metric-label">Delivered Rate</div>
         <div class="metric-value" id="val-delivered">—</div>
         <div class="metric-delta" id="delta-delivered"></div>
       </div>
-      <div class="metric-card" style="background:linear-gradient(135deg,#1a3a6b,#3b82f6)">
+      <div class="metric-card metric-card-2">
         <div class="metric-label">Open Rate</div>
         <div class="metric-value" id="val-open">—</div>
         <div class="metric-delta" id="delta-open"></div>
         <div class="metric-benchmark">Benchmark: 19%</div>
       </div>
-      <div class="metric-card" style="background:linear-gradient(135deg,#0c4a6e,#0ea5e9)">
+      <div class="metric-card metric-card-3">
         <div class="metric-label">Click Rate</div>
         <div class="metric-value" id="val-click">—</div>
         <div class="metric-delta" id="delta-click"></div>
       </div>
-      <div class="metric-card" style="background:linear-gradient(135deg,#2d1f6e,#7c3aed)">
+      <div class="metric-card metric-card-4">
         <div class="metric-label">CTOR</div>
         <div class="metric-value" id="val-ctor">—</div>
         <div class="metric-delta" id="delta-ctor"></div>
         <div class="metric-benchmark">Benchmark: 7.5%</div>
       </div>
-      <div class="metric-card" style="background:linear-gradient(135deg,#4a1942,#db2777)">
+      <div class="metric-card metric-card-5">
         <div class="metric-label">Unsubscribe Rate</div>
         <div class="metric-value" id="val-unsub">—</div>
         <div class="metric-delta" id="delta-unsub"></div>
         <div class="metric-benchmark">Benchmark: 0.5%</div>
       </div>
-      <div class="metric-card" style="background:linear-gradient(135deg,#4a1a1a,#dc2626)">
+      <div class="metric-card metric-card-6">
         <div class="metric-label">Bounce Rate</div>
         <div class="metric-value" id="val-bounce">—</div>
         <div class="metric-delta" id="delta-bounce"></div>
@@ -728,6 +758,15 @@ const ALL_EMAILS = {emails_json};
 const PLAYBOOK = {playbook_data_json};
 const AI_SUMMARIES = {json.dumps(ai_summaries)};
 const PIPELINE_DATA = {pipeline_data_json};
+
+// No chart components exist in this dashboard yet (Dashboard/Analyzer use
+// tables, not canvas/SVG). This is the palette's specified 5-color sequence
+// for whenever one is built, so new charts pick it up instead of library
+// defaults.
+const CHART_COLOR_SEQUENCE = [
+  'var(--color-good)', 'var(--color-accent)', 'var(--color-caution)',
+  'var(--color-primary-hover)', 'var(--color-border)',
+];
 
 // ── Sidebar navigation ──────────────────────────────────────────
 function switchView(name, btn) {{
