@@ -143,7 +143,6 @@ class PipelineResult:
         ao_open  = [o for o in ao if not o.is_closed]
         ao_won   = [o for o in ao if o.is_won]
         ao_post  = [o for o in ao if o.created_post_send and not o.is_closed]
-        top_opps = sorted(co_open, key=lambda o: -o.amount)[:10]
         return {
             "send_date": self.send_date,
             "total_engaged": self.total_engaged,
@@ -163,6 +162,7 @@ class PipelineResult:
                     "amount": o.amount,
                     "is_closed": o.is_closed,
                     "is_won": o.is_won,
+                    "created_date": o.created_date,
                     "post_send": o.created_post_send,
                     "contact_level": o.contact_level,
                     "signal_tier": o.signal_tier,
@@ -184,18 +184,6 @@ class PipelineResult:
             "account_won_value": sum(o.amount for o in ao_won),
             "account_post_count": len(ao_post),
             "account_post_value": sum(o.amount for o in ao_post),
-            "top_opps": [
-                {
-                    "account": o.account_name,
-                    "name": o.name,
-                    "stage": o.stage,
-                    "amount": o.amount,
-                    "post_send": o.created_post_send,
-                    "signal_tier": o.signal_tier,
-                    "corroborated": o.corroborated,
-                }
-                for o in top_opps
-            ],
         }
 
 

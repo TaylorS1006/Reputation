@@ -475,6 +475,7 @@ def _render_html(
   .tier-directly {{ background: #dcfce7; color: #15803d; }}
   .tier-uncorroborated {{ background: #fef3c7; color: #b45309; }}
   .tier-none {{ background: #f1f5f9; color: #64748b; }}
+  .pipeline-tier-timing {{ font-size: 10px; color: #94a3b8; margin-top: 4px; white-space: nowrap; }}
   .pipeline-disclaimer {{ font-size: 12px; color: #94a3b8; margin-top: 8px; font-style: italic; }}
   .pipeline-empty {{ color: #94a3b8; font-size: 15px; padding: 60px; text-align: center; background: white; border-radius: 12px; }}
 
@@ -805,6 +806,19 @@ function selectPipelineCampaigns(from, to, type, campaign) {{
 const TIER_LABELS = {{ directly_followed: 'Directly followed', followed_uncorroborated: 'Followed, uncorroborated', no_signal: 'No qualifying signal' }};
 const TIER_RANK = {{ directly_followed: 2, followed_uncorroborated: 1, no_signal: 0 }};
 const TIER_CLASS = {{ directly_followed: 'tier-directly', followed_uncorroborated: 'tier-uncorroborated', no_signal: 'tier-none' }};
+const SIGNAL_WINDOW_DAYS = 60; // mirrors pipeline.py's SIGNAL_WINDOW_DAYS
+
+// Shows created-vs-click dates and the day delta driving the tier verdict.
+function tierTimingLabel(o) {{
+  if (!o.created_date || !o.click_date_used) return '';
+  const created = new Date(o.created_date + 'T00:00:00Z');
+  const clicked = new Date(o.click_date_used + 'T00:00:00Z');
+  const days = Math.round((created - clicked) / 86400000);
+  const base = `Created ${{o.created_date}} · Clicked ${{o.click_date_used}}`;
+  if (days < 0) return `${{base}} (${{Math.abs(days)}}d before click)`;
+  if (days > SIGNAL_WINDOW_DAYS) return `${{base}} (+${{days}}d, outside ${{SIGNAL_WINDOW_DAYS}}d window)`;
+  return `${{base}} (+${{days}}d)`;
+}}
 
 // Merge N campaigns into one rollup: dedupe matched contacts by email and
 // opportunities by id so a contact/deal touched by multiple campaigns in the
@@ -901,8 +915,11 @@ function renderPipeline() {{
   let oppsRows = '';
   d.top_opps.forEach(o => {{
     const postBadge = o.post_send ? '<span class="post-send-badge">POST-SEND</span>' : '';
+    const timing = tierTimingLabel(o);
     const tierBadge = o.signal_tier
-      ? `<span class="pipeline-tier-chip ${{TIER_CLASS[o.signal_tier]}}">${{TIER_LABELS[o.signal_tier]}}</span>` : '';
+      ? `<span class="pipeline-tier-chip ${{TIER_CLASS[o.signal_tier]}}">${{TIER_LABELS[o.signal_tier]}}</span>` +
+        (timing ? `<div class="pipeline-tier-timing">${{timing}}</div>` : '')
+      : '';
     oppsRows += `<tr>
       <td>${{o.account}}${{postBadge}}</td>
       <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
