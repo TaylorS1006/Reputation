@@ -7,15 +7,19 @@ Salesforce, and rolls up associated pipeline and revenue — both account-level
 (any open opp at an account with a clicked contact) and contact-level (that
 specific person is on the deal).
 
-Contact-level opportunities are further sorted into signal tiers, aligned to
-Medallion's existing 60-day attribution window:
-  - "directly_followed"        — the opportunity was created within 60 days
+Contact-level opportunities are further sorted into signal tiers, using an
+attribution window of SIGNAL_WINDOW_DAYS after the contact's click:
+  - "directly_followed"        — displayed as "Followed by rep activity" — the
+                                  opportunity was created within the window
                                   after the contact's click, AND a rep
                                   Task/Event ties the contact or account to
                                   that window (corroborated).
-  - "followed_uncorroborated"  — same 60-day match, but no rep Task/Event
-                                  found in that window.
-  - "no_signal"                — the opp falls outside the 60-day window.
+  - "followed_uncorroborated"  — same window match, but no rep Task/Event
+                                  found in it.
+  - "no_signal"                — the opp falls outside the window.
+Opportunities created more than STALE_OPP_EXCLUSION_DAYS before the click are
+excluded from contact-level results entirely — too old to plausibly relate to
+this engagement at all, rather than a "no signal" case worth showing.
 Account-level opportunities are untouched by this tiering — they remain
 "any open opp at a matched account," independent of window/rep signal.
 
@@ -45,18 +49,23 @@ load_dotenv()
 
 INTERNAL_DOMAIN = "medallion.co"
 
-# Aligns with Medallion's existing 60-day attribution window.
-SIGNAL_WINDOW_DAYS = 60
+# Attribution window for the contact-level "followed" tiers.
+SIGNAL_WINDOW_DAYS = 90
 
 # Grace period after an opportunity's creation during which a rep Task/Event
 # still counts as corroborating (reps often log the touch just after creating
 # the record, not strictly before).
 CORROBORATION_GRACE_DAYS = 2
 
+# Opportunities created more than this many days before the click are dropped
+# from contact-level results entirely — too old to plausibly relate to this
+# engagement, rather than a "no signal" case worth showing.
+STALE_OPP_EXCLUSION_DAYS = 365
+
 # Honest, non-causal labels for contact-level signal tiers — never "caused"
 # or "attributed".
 TIER_LABELS = {
-    "directly_followed": "Directly followed",
+    "directly_followed": "Followed by rep activity",
     "followed_uncorroborated": "Followed, uncorroborated",
     "no_signal": "No qualifying signal",
 }
@@ -107,6 +116,7 @@ class Opportunity:
 class PipelineResult:
     campaign_id: str
     campaign_subject: str
+    email_name: str
     send_date: str
 
     total_engaged: int         # clicked contacts, excluding internal (opens no longer count)
@@ -169,6 +179,9 @@ class PipelineResult:
                     "corroborated": o.corroborated,
                     "click_date_used": o.click_date_used,
                     "click_date_source": o.click_date_source,
+                    # Every opp here came from contacts/accounts that clicked
+                    # this one email, so this is uniform across the result.
+                    "email_name": self.email_name,
                 }
                 for o in self.all_opps
             ],
@@ -204,6 +217,7 @@ class EngagementDetail:
     clicked_emails: set[str]          # engagement = clicked, excluding internal — opens no longer count
     click_dates: dict[str, datetime]  # email -> earliest CLICK event datetime (UTC), only where HubSpot gave a parseable timestamp
     subject: str
+    email_name: str                   # HubSpot marketing email's internal "name" field
     send_date: str                    # YYYY-MM-DD
 
 
@@ -220,8 +234,8 @@ def _get_clicked_emails(campaign_id: str, hs_token: str) -> EngagementDetail:
     headers = {"Authorization": f"Bearer {hs_token}"}
     base = "https://api.hubapi.com"
 
-    # Get email metadata (subject + send date)
-    subject, send_date = "", ""
+    # Get email metadata (subject, internal name + send date)
+    subject, email_name, send_date = "", "", ""
     after = None
     while True:
         params = {"limit": 100, "sort": "-publishDate"}
@@ -233,6 +247,7 @@ def _get_clicked_emails(campaign_id: str, hs_token: str) -> EngagementDetail:
         for email in body.get("results", []):
             if campaign_id in str(email.get("allEmailCampaignIds", [])):
                 subject = email.get("subject", "")
+                email_name = email.get("name", "")
                 raw_date = email.get("publishDate") or email.get("sendDate") or ""
                 send_date = raw_date[:10]  # YYYY-MM-DD
                 break
@@ -263,7 +278,7 @@ def _get_clicked_emails(campaign_id: str, hs_token: str) -> EngagementDetail:
             break
         offset = data.get("offset")
 
-    return EngagementDetail(clicked, click_dates, subject, send_date)
+    return EngagementDetail(clicked, click_dates, subject, email_name, send_date)
 
 
 # ─── Salesforce ──────────────────────────────────────────────────────────────
@@ -418,10 +433,11 @@ def _apply_signal_tiers(
     engagement: EngagementDetail,
     send_date: str,
     sf: Salesforce,
-) -> None:
+) -> list[Opportunity]:
     """
-    Mutates contact_opps in place, assigning signal_tier / corroborated /
-    click_date_used / click_date_source.
+    Tiers contact_opps and returns the retained list — opportunities created
+    more than STALE_OPP_EXCLUSION_DAYS before the click are dropped entirely
+    (see module docstring), everything else is kept and tiered in place.
 
     Every contact here already clicked — matching upstream (analyze_campaign_
     pipeline) is click-only, so there's no "opened but didn't click" case to
@@ -432,8 +448,8 @@ def _apply_signal_tiers(
     corroborated against rep Task/Event activity tied to the contact or
     account within that same window (+ a small grace period after the opp's
     creation, since reps often log the touch just after creating the
-    record). Opps outside the 60-day window land in "no_signal": still
-    shown, just labeled as a weaker/no signal, never hidden.
+    record). Opps outside the window land in "no_signal": still shown, just
+    labeled as a weaker/no signal, never hidden.
     """
     email_by_contact_id = {c.contact_id: c.email for c in contacts}
     fallback_send_dt: Optional[datetime] = None
@@ -442,11 +458,13 @@ def _apply_signal_tiers(
     except ValueError:
         pass
 
+    retained: list[Opportunity] = []
     candidates: list[Opportunity] = []
     for o in contact_opps:
         email = email_by_contact_id.get(o.contact_id)
         if not email:
             o.signal_tier = "no_signal"
+            retained.append(o)
             continue
 
         click_dt = engagement.click_dates.get(email)
@@ -459,14 +477,20 @@ def _apply_signal_tiers(
             o.click_date_source = "campaign_send_date_fallback"
         else:
             o.signal_tier = "no_signal"
+            retained.append(o)
             continue
 
         try:
             created_dt = datetime.strptime(o.created_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         except ValueError:
             o.signal_tier = "no_signal"
+            retained.append(o)
             continue
 
+        if created_dt < click_dt - timedelta(days=STALE_OPP_EXCLUSION_DAYS):
+            continue  # too old to plausibly relate — drop entirely, not "no_signal"
+
+        retained.append(o)
         window_end = click_dt + timedelta(days=SIGNAL_WINDOW_DAYS)
         if click_dt <= created_dt <= window_end:
             candidates.append(o)
@@ -474,7 +498,7 @@ def _apply_signal_tiers(
             o.signal_tier = "no_signal"
 
     if not candidates:
-        return
+        return retained
 
     contact_ids = list({o.contact_id for o in candidates if o.contact_id})
     account_ids = list({o.account_id for o in candidates if o.account_id})
@@ -498,6 +522,8 @@ def _apply_signal_tiers(
 
         o.corroborated = corroborated
         o.signal_tier = "directly_followed" if corroborated else "followed_uncorroborated"
+
+    return retained
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
@@ -531,13 +557,14 @@ def analyze_campaign_pipeline(
     print(f"  {len(contact_opps)} unique opps with this contact on the deal")
 
     print(f"Applying {SIGNAL_WINDOW_DAYS}-day click-signal tiers + rep activity corroboration…")
-    _apply_signal_tiers(contact_opps, contacts, engagement, send_date, sf)
+    contact_opps = _apply_signal_tiers(contact_opps, contacts, engagement, send_date, sf)
     tier_counts = Counter(o.signal_tier for o in contact_opps)
     print(f"  {dict(tier_counts)}")
 
     return PipelineResult(
         campaign_id=campaign_id,
         campaign_subject=subject,
+        email_name=engagement.email_name,
         send_date=send_date,
         total_engaged=len(emails),
         total_matched=len(contacts),
@@ -580,7 +607,7 @@ def print_pipeline_report(result: PipelineResult) -> None:
     section("Account-level (any opp at matched accounts)", result.account_opps)
 
     tier_counts = Counter(o.signal_tier for o in result.contact_opps)
-    print("  ── Signal tiers (contact-level, 60-day click window) ──")
+    print(f"  ── Signal tiers (contact-level, {SIGNAL_WINDOW_DAYS}-day click window) ──")
     for tier in ("directly_followed", "followed_uncorroborated", "no_signal"):
         print(f"     {TIER_LABELS[tier]:<28} {tier_counts.get(tier, 0)}")
     print()

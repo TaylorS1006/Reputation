@@ -803,10 +803,10 @@ function selectPipelineCampaigns(from, to, type, campaign) {{
 }}
 
 // Honest, non-causal labels for contact-level signal tiers — never "caused" or "attributed".
-const TIER_LABELS = {{ directly_followed: 'Directly followed', followed_uncorroborated: 'Followed, uncorroborated', no_signal: 'No qualifying signal' }};
+const TIER_LABELS = {{ directly_followed: 'Followed by rep activity', followed_uncorroborated: 'Followed, uncorroborated', no_signal: 'No qualifying signal' }};
 const TIER_RANK = {{ directly_followed: 2, followed_uncorroborated: 1, no_signal: 0 }};
 const TIER_CLASS = {{ directly_followed: 'tier-directly', followed_uncorroborated: 'tier-uncorroborated', no_signal: 'tier-none' }};
-const SIGNAL_WINDOW_DAYS = 60; // mirrors pipeline.py's SIGNAL_WINDOW_DAYS
+const SIGNAL_WINDOW_DAYS = 90; // mirrors pipeline.py's SIGNAL_WINDOW_DAYS
 
 // Shows created-vs-click dates and the day delta driving the tier verdict.
 function tierTimingLabel(o) {{
@@ -845,6 +845,7 @@ function aggregatePipeline(entries) {{
           existing.corroborated = o.corroborated;
           existing.click_date_used = o.click_date_used;
           existing.click_date_source = o.click_date_source;
+          existing.email_name = o.email_name;
         }}
       }}
     }});
@@ -912,6 +913,10 @@ function renderPipeline() {{
   const postAccount = d.account_post_count > 0
     ? `<div class="pipeline-card-post">★ ${{d.account_post_count}} opps (${{fmt$(d.account_post_value)}}) created post-send</div>` : '';
 
+  const emailCell = name => name
+    ? `<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{name}}">${{name}}</td>`
+    : '<td style="color:#94a3b8">—</td>';
+
   let oppsRows = '';
   d.top_opps.forEach(o => {{
     const postBadge = o.post_send ? '<span class="post-send-badge">POST-SEND</span>' : '';
@@ -925,10 +930,11 @@ function renderPipeline() {{
       <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
       <td>${{o.stage}}</td>
       <td>${{tierBadge}}</td>
+      ${{emailCell(o.email_name)}}
       <td style="text-align:right;font-weight:700">${{fmt$(o.amount)}}</td>
     </tr>`;
   }});
-  if (!oppsRows) oppsRows = '<tr><td colspan="5" style="color:#94a3b8">No open contact-level opportunities found.</td></tr>';
+  if (!oppsRows) oppsRows = '<tr><td colspan="6" style="color:#94a3b8">No open contact-level opportunities found.</td></tr>';
 
   let accountOppsRows = '';
   d.top_account_opps.forEach(o => {{
@@ -937,17 +943,18 @@ function renderPipeline() {{
       <td>${{o.account}}${{postBadge}}</td>
       <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
       <td>${{o.stage}}</td>
+      ${{emailCell(o.email_name)}}
       <td style="text-align:right;font-weight:700">${{fmt$(o.amount)}}</td>
     </tr>`;
   }});
-  if (!accountOppsRows) accountOppsRows = '<tr><td colspan="4" style="color:#94a3b8">No open account-level opportunities found.</td></tr>';
+  if (!accountOppsRows) accountOppsRows = '<tr><td colspan="5" style="color:#94a3b8">No open account-level opportunities found.</td></tr>';
 
   const scopeLabel = d.campaignCount === 1
     ? `Sent ${{entries[0][1].send_date}}`
     : `${{d.campaignCount}} campaigns in range`;
 
   const tierLine = `
-    <span class="pipeline-tier-chip tier-directly">${{d.tier_counts.directly_followed}} directly followed</span>
+    <span class="pipeline-tier-chip tier-directly">${{d.tier_counts.directly_followed}} followed by rep activity</span>
     <span class="pipeline-tier-chip tier-uncorroborated">${{d.tier_counts.followed_uncorroborated}} followed, uncorroborated</span>
     <span class="pipeline-tier-chip tier-none">${{d.tier_counts.no_signal}} no qualifying signal</span>
   `;
@@ -981,7 +988,7 @@ function renderPipeline() {{
     <p class="pipeline-section-title">Top Open Opportunities (contact-level)</p>
     <div class="pipeline-table-wrap">
       <table>
-        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th>Signal</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th>Signal</th><th>Email Clicked</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${{oppsRows}}</tbody>
       </table>
     </div>
@@ -989,17 +996,17 @@ function renderPipeline() {{
     <p class="pipeline-section-title">Top Open Opportunities (account-level)</p>
     <div class="pipeline-table-wrap">
       <table>
-        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th style="text-align:right">Amount</th></tr></thead>
+        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th>Email Clicked</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${{accountOppsRows}}</tbody>
       </table>
     </div>
     <p class="pipeline-disclaimer">
       Engagement here means clicked — opens no longer count anywhere in Pipeline Association, including which contacts/accounts pull in opportunities at all.
       ★ POST-SEND = opportunity created any time after the email send date (no day limit).
-      Signal tiers apply to contact-level opportunities only, aligned to Medallion's 60-day attribution window:
-      <strong>Directly followed</strong> = the opp was created within 60 days after the contact's click, with a rep Task/Event tying the contact or account to that window;
-      <strong>Followed, uncorroborated</strong> = same 60-day match, no rep activity found;
-      <strong>No qualifying signal</strong> = the opp falls outside the 60-day window — still shown, never hidden.
+      Signal tiers apply to contact-level opportunities only, using a 90-day attribution window from the contact's click. Opportunities created more than 365 days before the click are excluded entirely as too old to plausibly relate.
+      <strong>Followed by rep activity</strong> = the opp was created within 90 days after the contact's click, with a rep Task/Event tying the contact or account to that window;
+      <strong>Followed, uncorroborated</strong> = same 90-day match, no rep activity found;
+      <strong>No qualifying signal</strong> = the opp falls outside the 90-day window — still shown, never hidden.
       Account-level opportunities are not tiered. These are association signals, not causal attribution — no tier means the email "caused" or should be credited with the deal.
       All figures use Opportunity_Amount__c. Matched contacts and pipeline value are deduplicated across every campaign in the selected range; "total click touches" is summed per campaign and is not deduplicated.
     </p>
