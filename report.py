@@ -855,6 +855,8 @@ function aggregatePipeline(entries) {{
   const a = rollup(accountOpps);
   const topOpps = contactOpps.filter(o => !o.is_closed)
     .sort((x, y) => y.amount - x.amount).slice(0, 10);
+  const topAccountOpps = accountOpps.filter(o => !o.is_closed)
+    .sort((x, y) => y.amount - x.amount).slice(0, 10);
 
   const tierCounts = {{ directly_followed: 0, followed_uncorroborated: 0, no_signal: 0 }};
   contactOpps.forEach(o => {{ if (tierCounts.hasOwnProperty(o.signal_tier)) tierCounts[o.signal_tier]++; }});
@@ -870,6 +872,7 @@ function aggregatePipeline(entries) {{
     account_won_count: a.won_count, account_won_value: a.won_value,
     account_post_count: a.post_count, account_post_value: a.post_value,
     top_opps: topOpps,
+    top_account_opps: topAccountOpps,
     tier_counts: tierCounts,
   }};
 }}
@@ -909,6 +912,18 @@ function renderPipeline() {{
     </tr>`;
   }});
   if (!oppsRows) oppsRows = '<tr><td colspan="5" style="color:#94a3b8">No open contact-level opportunities found.</td></tr>';
+
+  let accountOppsRows = '';
+  d.top_account_opps.forEach(o => {{
+    const postBadge = o.post_send ? '<span class="post-send-badge">POST-SEND</span>' : '';
+    accountOppsRows += `<tr>
+      <td>${{o.account}}${{postBadge}}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${{o.name}}</td>
+      <td>${{o.stage}}</td>
+      <td style="text-align:right;font-weight:700">${{fmt$(o.amount)}}</td>
+    </tr>`;
+  }});
+  if (!accountOppsRows) accountOppsRows = '<tr><td colspan="4" style="color:#94a3b8">No open account-level opportunities found.</td></tr>';
 
   const scopeLabel = d.campaignCount === 1
     ? `Sent ${{entries[0][1].send_date}}`
@@ -951,6 +966,14 @@ function renderPipeline() {{
       <table>
         <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th>Signal</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${{oppsRows}}</tbody>
+      </table>
+    </div>
+
+    <p class="pipeline-section-title">Top Open Opportunities (account-level)</p>
+    <div class="pipeline-table-wrap">
+      <table>
+        <thead><tr><th>Account</th><th>Opportunity</th><th>Stage</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${{accountOppsRows}}</tbody>
       </table>
     </div>
     <p class="pipeline-disclaimer">
