@@ -5,6 +5,9 @@ on:
     - cron: '0 13 * * *'  # 5am PT (UTC-8) / 6am PDT (UTC-7) — runs at 1pm UTC
   workflow_dispatch:       # also allows manual trigger from GitHub UI
 
+permissions:
+  contents: write
+
 jobs:
   generate-report:
     runs-on: ubuntu-latest
