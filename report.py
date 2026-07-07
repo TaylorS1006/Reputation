@@ -19,11 +19,16 @@ import anthropic
 from dotenv import load_dotenv
 
 from analyzer import (
+    build_all_company_segments_overview_playbook,
     build_all_personas_overview_playbook,
+    build_company_segment_overview_playbooks,
     build_persona_overview_playbooks,
     build_persona_playbooks,
     build_playbook,
 )
+from company_segment_config import REAL_SEGMENTS as REAL_COMPANY_SEGMENTS
+from company_segment_data import build_company_segment_data, segment_groups_for
+from email_recipients import fetch_email_recipients
 from hubspot_client import EmailRecord, fetch_emails
 from nurture_data import (
     KNOWN_NURTURES,
@@ -372,7 +377,23 @@ def _render_nurture_segment_rows(segments: list[NurtureSegment]) -> str:
     return rows or '<tr><td colspan="3">No segment data available.</td></tr>'
 
 
-def _render_nurture_opportunity_card(segment: NurtureSegment, insight: Optional[dict]) -> str:
+def _priority_tier(rank: int, total: int) -> str:
+    """High/Medium/Low tier from this card's rank among all opportunity cards
+    shown (thirds), so the label reflects the actual priority_score ordering
+    rather than a fixed per-stage label."""
+    if total <= 1:
+        return "High"
+    frac = (rank - 1) / total
+    if frac < 1 / 3:
+        return "High"
+    if frac < 2 / 3:
+        return "Medium"
+    return "Low"
+
+
+def _render_nurture_opportunity_card(
+    segment: NurtureSegment, insight: Optional[dict], rank: int, total: int
+) -> str:
     if insight:
         stat_html = (
             f'<div class="insight-stat">{insight["key_stat"]}</div>' if insight.get("key_stat") else ""
@@ -386,11 +407,16 @@ def _render_nurture_opportunity_card(segment: NurtureSegment, insight: Optional[
                 <p class="insufficient-note">No send-performance signal yet for this persona — start
                 with a general awareness/education angle and iterate once opens/clicks come in.</p>"""
 
+    tier = _priority_tier(rank, total)
     return f"""
         <div class="nurture-opportunity-card">
             <div class="nurture-card-header">
                 <h3>{segment.persona} — {segment.lifecycle_stage}</h3>
                 <span class="pct-pill ok">{segment.count:,} contacts</span>
+            </div>
+            <div class="nurture-priority-block">
+                <span class="nurture-rank">#{rank} of {total}</span>
+                <p class="nurture-priority-rationale">Priority: {tier} — {segment.stage_rationale}, no coverage.</p>
             </div>
             <p class="nurture-card-subtitle">No active nurture coverage</p>
             <div class="nurture-angle-block">
@@ -435,9 +461,13 @@ def _render_nurture_section(
         coverage_text = "No active nurtures currently running. All segments below have no active nurture coverage."
 
     opportunity_segments = [s for s in nurture_segments if s.count >= NURTURE_OPPORTUNITY_MIN_SIZE]
+    opportunity_segments = sorted(opportunity_segments, key=lambda s: s.priority_score, reverse=True)
+    total_opportunities = len(opportunity_segments)
     opportunity_cards = "".join(
-        _render_nurture_opportunity_card(s, best_insight_for_persona(persona_playbooks, s.persona))
-        for s in opportunity_segments
+        _render_nurture_opportunity_card(
+            s, best_insight_for_persona(persona_playbooks, s.persona), rank, total_opportunities
+        )
+        for rank, s in enumerate(opportunity_segments, start=1)
     ) or '<p class="insufficient-note">No segments meet the minimum size threshold.</p>'
 
     asset_cards = "".join(_render_nurture_asset_card(n) for n in disabled)
@@ -449,28 +479,43 @@ def _render_nurture_section(
 
     segment_rows = _render_nurture_segment_rows(nurture_segments)
 
+    # No segment currently maps to the "onboarding contacts only" coverage
+    # from KNOWN_NURTURES, so every opportunity segment shown here is
+    # uncovered — this count is always 0 today, kept as a variable (not a
+    # literal) so it stays correct if per-segment coverage tracking is added.
+    covered_count = 0
+    summary_line = (
+        f"Nurture — {total_opportunities} opportunity segment{'s' if total_opportunities != 1 else ''}, "
+        f"{covered_count} with active coverage"
+    )
+
     return f"""
   <!-- Nurture -->
   <div id="view-nurture" class="view">
-    <p class="view-title">Nurture Opportunities</p>
-
-    <div class="nurture-coverage-banner">
-        <span class="exec-summary-label">Coverage reality</span>
-        <p>{coverage_text}</p>
+    <div class="nurture-section-header" onclick="toggleNurtureSection()">
+        <p class="view-title">Nurture Opportunities <span id="nurture-toggle-icon" class="nurture-toggle-icon">▸</span></p>
+        <p id="nurture-summary-line" class="nurture-summary-line">{summary_line}</p>
     </div>
 
-    <p class="section-title">Audience Segments (Persona × Lifecycle Stage)</p>
-    <div class="summary-card">
-        <table>
-            <thead><tr><th>Persona</th><th>Lifecycle Stage</th><th>Contacts</th></tr></thead>
-            <tbody>{segment_rows}</tbody>
-        </table>
-    </div>
+    <div id="nurture-section-body" class="nurture-section-body collapsed">
+        <div class="nurture-coverage-banner">
+            <span class="exec-summary-label">Coverage reality</span>
+            <p>{coverage_text}</p>
+        </div>
 
-    <p class="section-title">Opportunity Cards</p>
-    <div class="nurture-cards-grid">{opportunity_cards}</div>
+        <p class="section-title">Audience Segments (Persona × Lifecycle Stage)</p>
+        <div class="summary-card">
+            <table>
+                <thead><tr><th>Persona</th><th>Lifecycle Stage</th><th>Contacts</th></tr></thead>
+                <tbody>{segment_rows}</tbody>
+            </table>
+        </div>
 
-    {asset_section}
+        <p class="section-title">Opportunity Cards</p>
+        <div class="nurture-cards-grid">{opportunity_cards}</div>
+
+        {asset_section}
+    </div><!-- /nurture-section-body -->
   </div><!-- /nurture -->"""
 
 
@@ -1307,6 +1352,13 @@ def _persona_slug(persona: str) -> str:
     return s.strip("-")
 
 
+def _company_segment_slug(bucket: str) -> str:
+    """'Hospital/Health System' -> 'hospital-health-system', for panel/DOM ids."""
+    s = re.sub(r"\s+", "-", bucket.lower().replace("/", "-"))
+    s = re.sub(r"-{2,}", "-", s)
+    return s.strip("-")
+
+
 def _render_html(
     all_emails: list[EmailRecord],
     rows: list[dict],
@@ -1326,6 +1378,12 @@ def _render_html(
     persona_data_error: Optional[str] = None,
     persona_overview_playbooks: Optional[dict[str, dict]] = None,
     all_personas_overview_playbook: Optional[dict] = None,
+    company_segment_email_groups: Optional[dict[str, dict[str, list[EmailRecord]]]] = None,
+    company_segment_confidence: Optional[dict[str, dict]] = None,
+    company_segment_overall_unclassified_pct: float = 0.0,
+    company_segment_data_error: Optional[str] = None,
+    company_segment_overview_playbooks: Optional[dict[str, dict]] = None,
+    all_company_segments_overview_playbook: Optional[dict] = None,
     nurture_segments: Optional[list[NurtureSegment]] = None,
 ) -> str:
     now_str = generated_at.strftime("%B %d, %Y at %I:%M %p UTC")
@@ -1427,6 +1485,51 @@ def _render_html(
         f'<option value="{_persona_slug(p)}">{p}</option>' for p in REAL_PERSONAS
     )
     persona_overview_meta_json = json.dumps(persona_overview_meta)
+
+    # Build "By segment" panels — one per resolved company-segment bucket
+    # (Hospital/Health System, Provider Group) plus "All", each analyzed
+    # across ALL content types at once, same pattern as the By-persona
+    # overview above (see analyzer.build_company_segment_overview_playbooks).
+    company_segment_email_groups = company_segment_email_groups or {}
+    company_segment_confidence = company_segment_confidence or {}
+    company_segment_overview_playbooks = company_segment_overview_playbooks or {}
+    all_company_segments_overview_playbook = all_company_segments_overview_playbook or {
+        "status": "insufficient_data", "sample_count": 0, "minimum_required": 5,
+    }
+    company_segment_confidence_json = json.dumps({
+        _company_segment_slug(bucket): conf for bucket, conf in company_segment_confidence.items()
+    })
+    # Same scope build_all_company_segments_overview_playbook was analyzed
+    # against (current window, content_type set) — reuses
+    # all_current_typed_emails computed above for the persona "All" panel,
+    # since both "All" panels are analyzed against the identical email set.
+    company_segment_overview_panels = _render_playbook_panel(
+        "panel-segment-overview-all",
+        all_company_segments_overview_playbook,
+        all_current_typed_emails,
+        hidden=False,
+        show_content_type=True,
+    )
+    company_segment_overview_meta: dict[str, dict] = {
+        "all": {
+            "title": "All Segments",
+            "count": all_company_segments_overview_playbook.get("sample_count", ""),
+        }
+    }
+    for bucket, data in company_segment_overview_playbooks.items():
+        slug = _company_segment_slug(bucket)
+        emails = [] if "status" in data else [
+            e for group in company_segment_email_groups.get(bucket, {}).values() for e in group
+        ]
+        company_segment_overview_panels += _render_playbook_panel(
+            f"panel-segment-overview-{slug}", data, emails, hidden=True, show_content_type=True,
+        )
+        company_segment_overview_meta[slug] = {"title": bucket, "count": data.get("sample_count", "")}
+
+    company_segment_overview_picker_options = "".join(
+        f'<option value="{_company_segment_slug(b)}">{b}</option>' for b in REAL_COMPANY_SEGMENTS
+    )
+    company_segment_overview_meta_json = json.dumps(company_segment_overview_meta)
 
     # Card color palette (one per metric)
     card_colors = [
@@ -1617,6 +1720,30 @@ def _render_html(
   .top-emails th, .top-emails td {{ padding: 9px 12px; font-size: 13px; }}
   .insufficient-note {{ color: var(--color-caution); font-size: 14px; padding: 8px 0; }}
 
+  /* Segment classification confidence — deliberately louder than
+     .insufficient-note. The By-segment tab's real-world unclassified rate
+     runs 35-45%+ (see company_segment_data.py's fallback chain), so this
+     needs to read as a standing data-quality fact about the view, not a
+     transient warning easy to skim past. */
+  .segment-confidence-banner {{
+    background: var(--color-bad-bg);
+    border: 1px solid var(--color-avoid);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 0 0 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.6;
+    color: var(--color-text);
+  }}
+  .segment-confidence-banner .segment-confidence-detail {{
+    display: block;
+    font-size: 12.5px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+    margin-top: 4px;
+  }}
+
   /* Executive summary — distinct from insight cards: bordered/highlighted callout */
   .exec-summary {{ background: var(--color-good-bg); border-left: 4px solid var(--color-primary-hover); border-radius: 6px; padding: 14px 18px; margin-bottom: 24px; }}
   .exec-summary-label {{ display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-primary-hover); margin-bottom: 6px; }}
@@ -1692,6 +1819,13 @@ def _render_html(
   .status-dot.red {{ background: var(--color-avoid); }}
 
   /* ── Nurture ── */
+  .nurture-section-header {{ cursor: pointer; user-select: none; padding-bottom: 12px; }}
+  .nurture-toggle-icon {{ display: inline-block; font-size: 12px; color: var(--color-text-secondary); }}
+  .nurture-summary-line {{ font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }}
+  .nurture-section-body.collapsed {{ display: none; }}
+  .nurture-priority-block {{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }}
+  .nurture-rank {{ font-size: 11px; font-weight: 700; color: var(--color-accent); background: var(--color-bg); padding: 2px 8px; border-radius: 99px; white-space: nowrap; }}
+  .nurture-priority-rationale {{ font-size: 12px; color: var(--color-text-secondary); }}
   .nurture-coverage-banner {{ background: var(--color-ok-bg); border-left: 4px solid var(--color-caution); border-radius: 6px; padding: 14px 18px; margin-bottom: 24px; }}
   .nurture-coverage-banner p {{ font-size: 14px; line-height: 1.65; color: var(--color-text); }}
   .nurture-cards-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-bottom: 28px; }}
@@ -1834,6 +1968,7 @@ def _render_html(
     <div class="playbook-mode-tabs">
       <button type="button" class="playbook-tab active" data-mode="content-type" onclick="selectPlaybookMode('content-type')">By content type</button>
       <button type="button" class="playbook-tab" data-mode="persona" onclick="selectPlaybookMode('persona')">By persona</button>
+      <button type="button" class="playbook-tab" data-mode="company-segment" onclick="selectPlaybookMode('company-segment')">By segment</button>
     </div>
 
     <div id="playbook-mode-content-type">
@@ -1869,6 +2004,26 @@ def _render_html(
         </div>
       </div>
     </div><!-- /playbook-mode-persona -->
+
+    <div id="playbook-mode-company-segment" style="display:none">
+      <div class="playbook-header">
+        <h2 id="playbook-segment-overview-title">All Segments <span class="sample-count" id="playbook-segment-overview-count"></span></h2>
+        <div class="playbook-header-controls">
+          <select class="select-styled" id="company-segment-overview-picker" onchange="selectOverviewCompanySegment(this.value)">
+            <option value="all">All</option>
+            {company_segment_overview_picker_options}
+          </select>
+        </div>
+      </div>
+      <p class="playbook-overview-subtitle">Companies bucketed into Hospital/Health System vs. Provider Group via a fallback chain across HubSpot's sub_segment__c, segment__c, and industry company fields — see the classification confidence note below before reading these insights.</p>
+      <div class="segment-confidence-banner" id="company-segment-overview-confidence-banner" style="display:none"></div>
+      <div class="playbook-card">
+        {company_segment_overview_panels}
+        <div id="panel-segment-overview-empty" class="playbook-panel" style="display:none">
+          <p class="insufficient-note">⚠ No eligible emails for this segment.</p>
+        </div>
+      </div>
+    </div><!-- /playbook-mode-company-segment -->
   </div><!-- /playbook -->
 
   <!-- Pipeline -->
@@ -1973,6 +2128,10 @@ const PERSONA_CONFIDENCE = {persona_confidence_json};
 const OVERALL_UNCLASSIFIED_PCT = {json.dumps(overall_unclassified_pct)};
 const PERSONA_DATA_ERROR = {json.dumps(persona_data_error)};
 const PERSONA_OVERVIEW_META = {persona_overview_meta_json};
+const COMPANY_SEGMENT_CONFIDENCE = {company_segment_confidence_json};
+const COMPANY_SEGMENT_OVERALL_UNCLASSIFIED_PCT = {json.dumps(company_segment_overall_unclassified_pct)};
+const COMPANY_SEGMENT_DATA_ERROR = {json.dumps(company_segment_data_error)};
+const COMPANY_SEGMENT_OVERVIEW_META = {company_segment_overview_meta_json};
 const AI_SUMMARIES = {json.dumps(ai_summaries)};
 const AI_QUARTERS = {json.dumps(QUARTER_DEFINITIONS)};
 const PIPELINE_DATA = {pipeline_data_json};
@@ -1993,6 +2152,18 @@ function switchView(name, btn) {{
   document.getElementById('view-' + name).classList.add('active');
   btn.classList.add('active');
 }}
+
+// ── Nurture section collapse/expand (remembers last state) ──────
+function setNurtureSectionCollapsed(collapsed) {{
+  document.getElementById('nurture-section-body').classList.toggle('collapsed', collapsed);
+  document.getElementById('nurture-toggle-icon').textContent = collapsed ? '▸' : '▾';
+}}
+function toggleNurtureSection() {{
+  const collapsed = !document.getElementById('nurture-section-body').classList.contains('collapsed');
+  setNurtureSectionCollapsed(collapsed);
+  localStorage.setItem('nurtureSectionCollapsed', collapsed ? '1' : '0');
+}}
+setNurtureSectionCollapsed(localStorage.getItem('nurtureSectionCollapsed') !== '0');
 
 // Populate type filter and playbook picker from data
 const typeSet = new Set(ALL_EMAILS.map(e => e.content_type).filter(t => t && t !== 'unknown'));
@@ -2411,6 +2582,7 @@ function updateAiSummary(typeFilter, campaignFilter, from, to) {{
 
 let playbookMode = 'content-type';
 let currentOverviewPersona = 'all';
+let currentOverviewCompanySegment = 'all';
 
 // Used by the By-persona banner — same PERSONA_DATA_ERROR /
 // OVERALL_UNCLASSIFIED_PCT / PERSONA_CONFIDENCE inputs the By-content-type
@@ -2462,12 +2634,78 @@ function selectOverviewPersona(persona) {{
   renderOverviewPanel();
 }}
 
+// Used by the By-segment banner — same COMPANY_SEGMENT_DATA_ERROR /
+// COMPANY_SEGMENT_OVERALL_UNCLASSIFIED_PCT / COMPANY_SEGMENT_CONFIDENCE
+// inputs computed by company_segment_data.py. Deliberately louder than
+// confidenceBannerText() above: returns {{main, detail}} rendered into
+// .segment-confidence-banner (bordered, higher-contrast) rather than the
+// quieter .insufficient-note the persona banner uses, since the real
+// unclassified rate here runs much higher (35-45%+, vs. persona's clean
+// job_function_1 enum) and needs to read as a standing fact, not a
+// dismissible caveat.
+function companySegmentConfidenceBannerText(segmentKey) {{
+  if (COMPANY_SEGMENT_DATA_ERROR) {{
+    return segmentKey === 'all'
+      ? {{ main: `⚠ Segment data is unavailable right now (${{COMPANY_SEGMENT_DATA_ERROR}}).`, detail: '' }}
+      : {{ main: `⚠ Segment data is unavailable right now (${{COMPANY_SEGMENT_DATA_ERROR}}) — not that this segment has no eligible emails. Switch to "All" for the unsegmented view.`, detail: '' }};
+  }}
+  if (segmentKey === 'all') {{
+    const classifiedPct = Math.max(0, Math.round((100 - COMPANY_SEGMENT_OVERALL_UNCLASSIFIED_PCT) * 10) / 10);
+    return {{
+      main: `⚠ ${{COMPANY_SEGMENT_OVERALL_UNCLASSIFIED_PCT}}% of contacts across analyzed sends could not be classified into a segment (no linked company, or the company is missing sub_segment__c, segment__c, and industry).`,
+      detail: `${{classifiedPct}}% resolved into Hospital/Health System or Provider Group via HubSpot's sub_segment__c (high confidence) or the coarser segment__c (medium confidence). Company industry alone is never used to assign a segment — a prior cross-check found only ~10% agreement between industry's "hospital" cluster and segment__c.`,
+    }};
+  }}
+  const c = COMPANY_SEGMENT_CONFIDENCE[segmentKey];
+  if (c && c.total_contacts > 0) {{
+    return {{
+      main: `ℹ ${{c.high_pct}}% of this segment's contacts were resolved via sub_segment__c (high confidence); ${{c.medium_pct}}% via the coarser segment__c (medium confidence).`,
+      detail: `Audience-wide, ${{COMPANY_SEGMENT_OVERALL_UNCLASSIFIED_PCT}}% of contacts across analyzed sends land in neither segment.`,
+    }};
+  }}
+  return {{ main: '', detail: '' }};
+}}
+
+function renderCompanySegmentOverviewBanner() {{
+  const banner = document.getElementById('company-segment-overview-confidence-banner');
+  const {{ main, detail }} = companySegmentConfidenceBannerText(currentOverviewCompanySegment);
+  if (!main) {{
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }}
+  banner.style.display = '';
+  banner.innerHTML = detail ? `${{main}}<span class="segment-confidence-detail">${{detail}}</span>` : main;
+}}
+
+function renderOverviewCompanySegmentPanel() {{
+  document.querySelectorAll('#playbook-mode-company-segment .playbook-panel').forEach(p => p.style.display = 'none');
+  let panel = document.getElementById('panel-segment-overview-' + currentOverviewCompanySegment);
+  if (!panel) panel = document.getElementById('panel-segment-overview-empty');
+  if (panel) panel.style.display = '';
+  renderCompanySegmentOverviewBanner();
+
+  const meta = COMPANY_SEGMENT_OVERVIEW_META[currentOverviewCompanySegment];
+  const title = meta ? meta.title : '';
+  const count = meta ? meta.count : '';
+  document.getElementById('playbook-segment-overview-title').childNodes[0].textContent = title + ' ';
+  document.getElementById('playbook-segment-overview-count').textContent = (count || count === 0) ? count + ' emails' : '';
+}}
+
+function selectOverviewCompanySegment(bucket) {{
+  currentOverviewCompanySegment = bucket;
+  document.getElementById('company-segment-overview-picker').value = bucket;
+  renderOverviewCompanySegmentPanel();
+}}
+
 function selectPlaybookMode(mode) {{
   playbookMode = mode;
   document.querySelectorAll('.playbook-tab').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   document.getElementById('playbook-mode-content-type').style.display = mode === 'content-type' ? '' : 'none';
   document.getElementById('playbook-mode-persona').style.display = mode === 'persona' ? '' : 'none';
+  document.getElementById('playbook-mode-company-segment').style.display = mode === 'company-segment' ? '' : 'none';
   if (mode === 'persona') renderOverviewPanel();
+  if (mode === 'company-segment') renderOverviewCompanySegmentPanel();
 }}
 
 function renderPlaybookPanel(anchor) {{
@@ -2496,6 +2734,8 @@ selectType('{first_anchor}');
 document.getElementById('type-picker').value = '{first_anchor}';
 document.getElementById('persona-overview-picker').value = 'all';
 renderOverviewPanel();
+document.getElementById('company-segment-overview-picker').value = 'all';
+renderOverviewCompanySegmentPanel();
 
 {cowrite_js}
 </script>
@@ -2525,10 +2765,17 @@ def generate_report(
     print("Running analyzer…")
     playbook = build_playbook(days=days, token=token)
 
+    print("\nFetching per-campaign recipient events for persona + segment classification…")
+    # Fetched ONCE and shared between persona and company-segment
+    # classification below — they used to each fetch this independently,
+    # which meant every campaign's DELIVERED/OPEN/CLICK events were pulled
+    # from HubSpot twice per report run (the dominant cost of a full run).
+    email_recipients = fetch_email_recipients(current, token=token)
+
     print("\nBuilding persona classification data (job_function_1 + jobtitle fallback)…")
     persona_data_error: Optional[str] = None
     try:
-        persona_data_result = build_persona_data(current, token=token)
+        persona_data_result = build_persona_data(current, token=token, recipients=email_recipients)
         persona_email_groups = {
             persona: persona_groups_for(current_groups, persona_data_result, persona)
             for persona in REAL_PERSONAS
@@ -2552,6 +2799,32 @@ def generate_report(
         # a HubSpot scope/permission failure reads as "data unavailable",
         # not "no eligible emails".
         persona_data_error = str(e)
+
+    print("\nBuilding company-segment classification data (sub_segment__c → segment__c → industry fallback)…")
+    company_segment_data_error: Optional[str] = None
+    try:
+        company_segment_data_result = build_company_segment_data(current, token=token, recipients=email_recipients)
+        company_segment_email_groups = {
+            bucket: segment_groups_for(current_groups, company_segment_data_result, bucket)
+            for bucket in REAL_COMPANY_SEGMENTS
+        }
+        print("\nRunning per-segment analyzer (By segment view — across all content types)…")
+        company_segment_overview_playbooks = build_company_segment_overview_playbooks(
+            company_segment_email_groups, token=token
+        )
+        all_company_segments_overview_playbook = build_all_company_segments_overview_playbook(
+            [e for e in current if e.content_type], token=token
+        )
+    except Exception as e:
+        print(f"  ✗ Company-segment classification failed: {e}")
+        company_segment_data_result = None
+        company_segment_email_groups = {}
+        company_segment_overview_playbooks = {}
+        all_company_segments_overview_playbook = {"status": "error", "error": str(e)}
+        # Surfaced verbatim by renderCompanySegmentOverviewBanner()
+        # (COMPANY_SEGMENT_DATA_ERROR) so a HubSpot scope/permission failure
+        # reads as "data unavailable", not "no eligible emails".
+        company_segment_data_error = str(e)
 
     print("\nBuilding nurture coverage data (persona × lifecycle stage segment sizing)…")
     try:
@@ -2714,6 +2987,16 @@ def generate_report(
         persona_data_error=persona_data_error,
         persona_overview_playbooks=persona_overview_playbooks,
         all_personas_overview_playbook=all_personas_overview_playbook,
+        company_segment_email_groups=company_segment_email_groups,
+        company_segment_confidence=(
+            company_segment_data_result.segment_confidence if company_segment_data_result else {}
+        ),
+        company_segment_overall_unclassified_pct=(
+            company_segment_data_result.overall_unclassified_pct if company_segment_data_result else 0.0
+        ),
+        company_segment_data_error=company_segment_data_error,
+        company_segment_overview_playbooks=company_segment_overview_playbooks,
+        all_company_segments_overview_playbook=all_company_segments_overview_playbook,
         nurture_segments=nurture_segments,
     )
 

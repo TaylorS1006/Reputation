@@ -33,6 +33,33 @@ from persona_config import REAL_PERSONAS
 # judgment call from the scoping pass.
 NURTURE_OPPORTUNITY_MIN_SIZE = 100
 
+# Customer = already converted, Disqualified = not a fit — neither is a
+# nurture target, so they're dropped before segments ever reach the page
+# (both the audience table and opportunity cards derive from this list).
+EXCLUDED_LIFECYCLE_STAGES = {"customer", "disqualified"}
+
+# Weight applied to raw contact count to rank opportunity cards by how
+# urgent/valuable the segment is to build a nurture for, not just its size.
+# Lead (Deprecated) is closest to sales-ready so it gets the highest weight;
+# Cold was previously engaged and is easier to re-activate; Pre-MQL is
+# usually the largest pool but the earliest and slowest to convert. Any
+# stage not listed here (new/unmapped HubSpot stages) defaults to 1.0.
+STAGE_WEIGHTS = {
+    "Lead (Deprecated)": 1.5,
+    "Cold": 1.2,
+    "Pre-MQL": 1.0,
+}
+DEFAULT_STAGE_WEIGHT = 1.0
+
+# Short phrase describing why a stage carries the urgency it does, reused in
+# the opportunity card's one-line priority rationale.
+STAGE_RATIONALE = {
+    "Lead (Deprecated)": "closest to sales-ready, highest urgency",
+    "Cold": "large re-engagement pool, previously engaged",
+    "Pre-MQL": "largest volume but earliest/slowest to convert",
+}
+DEFAULT_STAGE_RATIONALE = "opportunity segment"
+
 
 @dataclass
 class KnownNurture:
@@ -74,6 +101,18 @@ class NurtureSegment:
     lifecycle_stage: str  # display label, not the raw enum value
     count: int
 
+    @property
+    def stage_weight(self) -> float:
+        return STAGE_WEIGHTS.get(self.lifecycle_stage, DEFAULT_STAGE_WEIGHT)
+
+    @property
+    def priority_score(self) -> float:
+        return self.count * self.stage_weight
+
+    @property
+    def stage_rationale(self) -> str:
+        return STAGE_RATIONALE.get(self.lifecycle_stage, DEFAULT_STAGE_RATIONALE)
+
 
 def build_nurture_segments(*, token: Optional[str] = None) -> list[NurtureSegment]:
     """
@@ -99,7 +138,7 @@ def build_nurture_segments(*, token: Optional[str] = None) -> list[NurtureSegmen
                     {"propertyName": "lifecyclestage", "operator": "EQ", "value": stage_value},
                 ],
             )
-            if count > 0:
+            if count > 0 and stage_label.strip().lower() not in EXCLUDED_LIFECYCLE_STAGES:
                 segments.append(NurtureSegment(persona=persona, lifecycle_stage=stage_label, count=count))
 
     segments.sort(key=lambda s: s.count, reverse=True)
