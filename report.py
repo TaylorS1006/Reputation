@@ -1302,6 +1302,7 @@ def _render_html(
     persona_email_groups: Optional[dict[str, dict[str, list[EmailRecord]]]] = None,
     persona_confidence: Optional[dict[str, dict]] = None,
     overall_unclassified_pct: float = 0.0,
+    persona_data_error: Optional[str] = None,
     nurture_segments: Optional[list[NurtureSegment]] = None,
 ) -> str:
     now_str = generated_at.strftime("%B %d, %Y at %I:%M %p UTC")
@@ -1893,6 +1894,7 @@ const PLAYBOOK_FULL = {playbook_full_json};
 const PERSONA_PLAYBOOK_META = {persona_playbook_meta_json};
 const PERSONA_CONFIDENCE = {persona_confidence_json};
 const OVERALL_UNCLASSIFIED_PCT = {json.dumps(overall_unclassified_pct)};
+const PERSONA_DATA_ERROR = {json.dumps(persona_data_error)};
 const AI_SUMMARIES = {json.dumps(ai_summaries)};
 const AI_QUARTERS = {json.dumps(QUARTER_DEFINITIONS)};
 const PIPELINE_DATA = {pipeline_data_json};
@@ -2337,6 +2339,15 @@ function personaPanelId(anchor) {{
 
 function renderPersonaBanner() {{
   const banner = document.getElementById('persona-confidence-banner');
+  // A HubSpot API failure while building persona data (e.g. a missing
+  // scope) looks identical to "no eligible emails" unless called out
+  // explicitly — this takes priority over both the 'all' and per-persona
+  // banners so it's never mistaken for a real data-quality signal.
+  if (PERSONA_DATA_ERROR && currentPersona !== 'all') {{
+    banner.style.display = '';
+    banner.textContent = `⚠ Persona data is unavailable right now (${{PERSONA_DATA_ERROR}}) — not that this segment has no eligible emails. Switch to "All" for the unsegmented view.`;
+    return;
+  }}
   if (currentPersona === 'all') {{
     if (OVERALL_UNCLASSIFIED_PCT > 0) {{
       banner.style.display = '';
@@ -2428,6 +2439,7 @@ def generate_report(
     playbook = build_playbook(days=days, token=token)
 
     print("\nBuilding persona classification data (job_function_1 + jobtitle fallback)…")
+    persona_data_error: Optional[str] = None
     try:
         persona_data_result = build_persona_data(current, token=token)
         persona_email_groups = {
@@ -2441,6 +2453,10 @@ def generate_report(
         persona_data_result = None
         persona_email_groups = {}
         persona_playbooks = {}
+        # Surfaced verbatim by renderPersonaBanner() (PERSONA_DATA_ERROR) so
+        # a HubSpot scope/permission failure reads as "data unavailable",
+        # not "no eligible emails".
+        persona_data_error = str(e)
 
     print("\nBuilding nurture coverage data (persona × lifecycle stage segment sizing)…")
     try:
@@ -2600,6 +2616,7 @@ def generate_report(
         persona_email_groups=persona_email_groups,
         persona_confidence=(persona_data_result.persona_confidence if persona_data_result else {}),
         overall_unclassified_pct=(persona_data_result.overall_unclassified_pct if persona_data_result else 0.0),
+        persona_data_error=persona_data_error,
         nurture_segments=nurture_segments,
     )
 
