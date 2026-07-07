@@ -1356,10 +1356,13 @@ def _render_html(
     # Embed all emails as JSON for client-side filtering
     emails_json = _emails_to_json(all_emails)
 
-    # Build playbook panels (static — not affected by filters). The "All"
-    # panels stay first/visible-by-default exactly as before; persona panels
-    # (panel-{persona-slug}-{anchor}) are appended hidden and toggled by JS
-    # when the persona dropdown changes — see selectPersona()/renderPlaybookPanel().
+    # Build playbook panels (static — not affected by filters). The
+    # "By content type" view always shows this unsegmented-by-persona data —
+    # there is no persona filter here anymore (see "By persona" tab for
+    # persona-scoped analysis). persona_playbooks (the (persona, content_type)
+    # cross-tab) is still computed by generate_report and used by the nurture
+    # section's best_insight_for_persona() — just no longer rendered into
+    # this view's panels, since the dropdown that reached them is gone.
     playbook_panels = ""
     first = True
     all_types = sorted(playbook.keys())
@@ -1374,29 +1377,16 @@ def _render_html(
     persona_playbooks = persona_playbooks or {}
     persona_email_groups = persona_email_groups or {}
     persona_confidence = persona_confidence or {}
-    persona_slugs: dict[str, str] = {}  # persona name -> slug, for the JSON below
-    persona_playbook_meta: dict[str, dict] = {}
-    for persona, persona_groups in persona_playbooks.items():
-        slug = _persona_slug(persona)
-        persona_slugs[persona] = slug
-        persona_playbook_meta[slug] = {}
-        for ct, data in persona_groups.items():
-            anchor = ct.replace(" ", "-")
-            emails = [] if "status" in data else persona_email_groups.get(persona, {}).get(ct, [])
-            playbook_panels += _render_playbook_panel(f"panel-{slug}-{anchor}", data, emails, hidden=True)
-            persona_playbook_meta[slug][anchor] = {"title": ct.title(), "count": data.get("sample_count", "")}
-
-    persona_options_html = "".join(
-        f'<option value="{_persona_slug(p)}">{p}</option>' for p in REAL_PERSONAS
-    )
 
     playbook_data_json = json.dumps({
         ct.replace(" ", "-"): {"title": ct.title(), "count": playbook[ct].get("sample_count", "")}
         for ct in all_types if "status" not in playbook[ct]
     })
-    persona_playbook_meta_json = json.dumps(persona_playbook_meta)
+    # Keyed by persona slug directly (not derived from persona_playbooks) so
+    # this stays available for the "By persona" tab's confidence banner
+    # regardless of what the (now-unrendered) cross-tab contains.
     persona_confidence_json = json.dumps({
-        persona_slugs[persona]: conf for persona, conf in persona_confidence.items() if persona in persona_slugs
+        _persona_slug(persona): conf for persona, conf in persona_confidence.items()
     })
     first_anchor = all_types[0].replace(" ", "-") if all_types else ""
     first_title = all_types[0].title() if all_types else ""
@@ -1850,21 +1840,13 @@ def _render_html(
       <div class="playbook-header">
         <h2 id="playbook-title">{first_title} <span class="sample-count" id="playbook-count"></span></h2>
         <div class="playbook-header-controls">
-          <select class="select-styled" id="persona-picker" onchange="selectPersona(this.value)">
-            <option value="all">All</option>
-            {persona_options_html}
-          </select>
           <select class="select-styled" id="type-picker" onchange="selectType(this.value)">
             <option value="">— select type —</option>
           </select>
         </div>
       </div>
-      <div class="insufficient-note" id="persona-confidence-banner" style="display:none"></div>
       <div class="playbook-card">
         {playbook_panels}
-        <div id="panel-persona-empty" class="playbook-panel" style="display:none">
-          <p class="insufficient-note">⚠ No eligible emails for this content type and persona combination.</p>
-        </div>
       </div>
     </div><!-- /playbook-mode-content-type -->
 
@@ -1987,7 +1969,6 @@ def _render_html(
 const ALL_EMAILS = {emails_json};
 const PLAYBOOK = {playbook_data_json};
 const PLAYBOOK_FULL = {playbook_full_json};
-const PERSONA_PLAYBOOK_META = {persona_playbook_meta_json};
 const PERSONA_CONFIDENCE = {persona_confidence_json};
 const OVERALL_UNCLASSIFIED_PCT = {json.dumps(overall_unclassified_pct)};
 const PERSONA_DATA_ERROR = {json.dumps(persona_data_error)};
@@ -2428,17 +2409,12 @@ function updateAiSummary(typeFilter, campaignFilter, from, to) {{
   document.getElementById('ai-summary-note').textContent = note;
 }}
 
-let currentPersona = 'all';
 let playbookMode = 'content-type';
 let currentOverviewPersona = 'all';
 
-function personaPanelId(anchor) {{
-  return currentPersona === 'all' ? 'panel-' + anchor : 'panel-' + currentPersona + '-' + anchor;
-}}
-
-// Shared by both the By-content-type persona banner and the By-persona
-// banner — same PERSONA_DATA_ERROR / OVERALL_UNCLASSIFIED_PCT / PERSONA_CONFIDENCE
-// inputs apply to a persona selection regardless of which view it's made in.
+// Used by the By-persona banner — same PERSONA_DATA_ERROR /
+// OVERALL_UNCLASSIFIED_PCT / PERSONA_CONFIDENCE inputs the By-content-type
+// view used to share when it had its own persona filter.
 function confidenceBannerText(personaKey) {{
   // A HubSpot API failure while building persona data (e.g. a missing
   // scope) looks identical to "no eligible emails" unless called out
@@ -2457,13 +2433,6 @@ function confidenceBannerText(personaKey) {{
     return `ℹ ${{c.clean_pct}}% of this segment's contacts came directly from Job Function; ${{c.fallback_pct}}% were reclassified from Job Title (fallback match).`;
   }}
   return '';
-}}
-
-function renderPersonaBanner() {{
-  const banner = document.getElementById('persona-confidence-banner');
-  const text = confidenceBannerText(currentPersona);
-  banner.style.display = text ? '' : 'none';
-  banner.textContent = text;
 }}
 
 function renderOverviewBanner() {{
@@ -2503,31 +2472,14 @@ function selectPlaybookMode(mode) {{
 
 function renderPlaybookPanel(anchor) {{
   document.querySelectorAll('.playbook-panel').forEach(p => p.style.display = 'none');
-  let panel = document.getElementById(personaPanelId(anchor));
-  if (!panel && currentPersona !== 'all') {{
-    panel = document.getElementById('panel-persona-empty');
-  }}
+  const panel = document.getElementById('panel-' + anchor);
   if (panel) panel.style.display = '';
 
   const typeMeta = PLAYBOOK[anchor];
   const title = typeMeta ? typeMeta.title : '';
-  let count = '';
-  if (currentPersona === 'all') {{
-    count = typeMeta ? typeMeta.count : '';
-  }} else {{
-    const personaMeta = (PERSONA_PLAYBOOK_META[currentPersona] || {{}})[anchor];
-    count = personaMeta ? personaMeta.count : 0;
-  }}
+  const count = typeMeta ? typeMeta.count : '';
   document.getElementById('playbook-title').childNodes[0].textContent = title + ' ';
   document.getElementById('playbook-count').textContent = (count || count === 0) ? count + ' emails' : '';
-}}
-
-function selectPersona(persona) {{
-  currentPersona = persona;
-  document.getElementById('persona-picker').value = persona;
-  renderPersonaBanner();
-  const anchor = document.getElementById('type-picker').value;
-  if (anchor) renderPlaybookPanel(anchor);
 }}
 
 function selectType(anchor) {{
@@ -2542,8 +2494,6 @@ function selectType(anchor) {{
 applyFilters();
 selectType('{first_anchor}');
 document.getElementById('type-picker').value = '{first_anchor}';
-document.getElementById('persona-picker').value = 'all';
-renderPersonaBanner();
 document.getElementById('persona-overview-picker').value = 'all';
 renderOverviewPanel();
 
@@ -2598,7 +2548,7 @@ def generate_report(
         persona_playbooks = {}
         persona_overview_playbooks = {}
         all_personas_overview_playbook = {"status": "error", "error": str(e)}
-        # Surfaced verbatim by renderPersonaBanner() (PERSONA_DATA_ERROR) so
+        # Surfaced verbatim by renderOverviewBanner() (PERSONA_DATA_ERROR) so
         # a HubSpot scope/permission failure reads as "data unavailable",
         # not "no eligible emails".
         persona_data_error = str(e)
